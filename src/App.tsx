@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Fuse from "fuse.js";
-import { useStore, initStore, addPrompt } from "./store";
+import { Plus, Sun, Moon, Monitor } from "lucide-react";
+import { useStore, initStore, addPrompt, setSettings } from "./store";
 import { Sidebar, type SidebarSelection } from "./components/Sidebar";
 import { SearchBar } from "./components/SearchBar";
 import { PromptList } from "./components/PromptList";
@@ -21,11 +22,33 @@ export default function App() {
     void initStore();
   }, []);
 
+  // Sync the active theme to <html data-theme>; honor "system" via media query.
+  useEffect(() => {
+    const root = document.documentElement;
+    const theme = store.settings.theme ?? "system";
+    const apply = () => {
+      if (theme === "system") {
+        const mql = window.matchMedia("(prefers-color-scheme: dark)");
+        root.setAttribute("data-theme", mql.matches ? "dark" : "light");
+      } else {
+        root.setAttribute("data-theme", theme);
+      }
+    };
+    apply();
+    if (theme === "system") {
+      const mql = window.matchMedia("(prefers-color-scheme: dark)");
+      const handler = () => apply();
+      mql.addEventListener("change", handler);
+      return () => mql.removeEventListener("change", handler);
+    }
+  }, [store.settings.theme]);
+
   // Apply sidebar filter, then fuzzy search, then sort (pinned first, then
   // most recently updated).
   const filtered = useMemo(() => {
     let list = store.prompts;
     if (sel.kind === "favorites") list = list.filter((p) => p.favorite);
+    if (sel.kind === "pinned") list = list.filter((p) => p.pinned);
     if (sel.kind === "tag") list = list.filter((p) => p.tags.includes(sel.tag));
     if (query.trim()) {
       const fuse = new Fuse(list, {
@@ -57,18 +80,45 @@ export default function App() {
     setSelectedId(p.id);
   };
 
+  const cycleTheme = () => {
+    const cur = store.settings.theme ?? "system";
+    const next = cur === "light" ? "dark" : cur === "dark" ? "system" : "light";
+    setSettings({ theme: next });
+  };
+
+  const currentTheme = store.settings.theme ?? "system";
+  const ThemeIcon =
+    currentTheme === "light"
+      ? Sun
+      : currentTheme === "dark"
+        ? Moon
+        : Monitor;
+  const themeLabel = {
+    light: "浅色",
+    dark: "深色",
+    system: "跟随系统",
+  }[currentTheme];
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
       <header className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
-        <div className="font-semibold text-lg">PromptPad</div>
+        <div className="font-semibold text-[15px] tracking-tight pl-1">PromptPad</div>
         <div className="flex-1 max-w-2xl">
           <SearchBar value={query} onChange={setQuery} />
         </div>
         <button
           onClick={onNew}
-          className="px-3 py-1.5 rounded bg-blue-500 text-white text-sm hover:bg-blue-600"
+          className="w-8 h-8 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors flex items-center justify-center text-zinc-600 dark:text-zinc-300"
+          title="新建"
         >
-          + 新建
+          <Plus className="w-4 h-4" />
+        </button>
+        <button
+          onClick={cycleTheme}
+          className="w-8 h-8 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors flex items-center justify-center text-zinc-500 dark:text-zinc-400"
+          title={`主题：${themeLabel}（点击切换）`}
+        >
+          <ThemeIcon className="w-4 h-4" />
         </button>
         <ImportExportMenu />
       </header>

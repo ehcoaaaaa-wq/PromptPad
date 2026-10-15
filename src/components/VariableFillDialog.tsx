@@ -9,6 +9,7 @@ import {
 } from "../lib/variables";
 import { writeText, readText } from "../lib/commands";
 import { pushToast } from "../hooks/useToast";
+import { Copy, X } from "lucide-react";
 
 export function VariableFillDialog({
   prompt,
@@ -48,18 +49,26 @@ export function VariableFillDialog({
 
   return (
     <div
-      className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4"
+      className="fixed inset-0 z-40 bg-black/30 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
-        className="bg-white dark:bg-zinc-900 rounded-lg shadow-xl w-full max-w-md p-4 flex flex-col gap-3 max-h-[80vh] overflow-y-auto"
+        className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl w-full max-w-md p-5 flex flex-col gap-3 max-h-[80vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-lg font-semibold truncate">
-          使用模板：{prompt.title || "(未命名)"}
+        <div className="flex items-center gap-2">
+          <div className="text-base font-semibold truncate flex-1 tracking-tight">
+            {prompt.title || "(未命名)"}
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center text-zinc-500"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
         {variables.length === 0 && (
-          <div className="text-sm text-zinc-500">
+          <div className="text-sm text-zinc-500 dark:text-zinc-400">
             此模板没有变量，直接复制即可。
           </div>
         )}
@@ -71,13 +80,17 @@ export function VariableFillDialog({
               : (values[v.name] ?? "");
           return (
             <label key={v.name} className="flex flex-col gap-1 text-sm">
-              <span className="font-medium">
-                {`{{${v.name}}}`}
+              <span className="font-medium flex items-center gap-2">
+                <span className="font-mono text-blue-600 dark:text-blue-400">
+                  {`{{${v.name}}}`}
+                </span>
                 {builtin && (
-                  <span className="ml-2 text-xs text-amber-600">内置</span>
+                  <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                    内置
+                  </span>
                 )}
                 {v.description && (
-                  <span className="ml-2 text-xs text-zinc-500">
+                  <span className="text-xs text-zinc-500 dark:text-zinc-400 font-normal">
                     {v.description}
                   </span>
                 )}
@@ -88,7 +101,7 @@ export function VariableFillDialog({
                 onChange={(e) =>
                   setValues({ ...values, [v.name]: e.target.value })
                 }
-                className="px-2 py-1 rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 disabled:opacity-60"
+                className="px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 focus:bg-white dark:focus:bg-zinc-900 disabled:opacity-60 focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
               />
             </label>
           );
@@ -96,14 +109,15 @@ export function VariableFillDialog({
         <div className="flex gap-2 justify-end pt-2">
           <button
             onClick={onClose}
-            className="px-3 py-1 rounded text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            className="px-3 py-1.5 rounded-md text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
           >
             取消
           </button>
           <button
             onClick={onCopy}
-            className="px-3 py-1 rounded bg-blue-500 text-white hover:bg-blue-600"
+            className="px-3 py-1.5 rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm"
           >
+            <Copy className="w-3.5 h-3.5" />
             复制到剪贴板
           </button>
         </div>

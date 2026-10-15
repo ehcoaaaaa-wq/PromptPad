@@ -21,6 +21,7 @@ export type Prompt = {
 
 export type Settings = {
   autoLaunch: boolean;
+  theme: "light" | "dark" | "system";
 };
 
 export type Store = {
@@ -32,5 +33,5 @@ export type Store = {
 export const DEFAULT_STORE: Store = {
   schemaVersion: 1,
   prompts: [],
-  settings: { autoLaunch: false },
+  settings: { autoLaunch: false, theme: "system" },
 };
