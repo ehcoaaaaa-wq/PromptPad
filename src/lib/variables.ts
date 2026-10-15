@@ -47,6 +47,18 @@ export function builtinValues(
   };
 }
 
+export function renderTemplate(
+  content: string,
+  customValues: Record<string, string>,
+  clipboard: string,
+  now = new Date(),
+): string {
+  const customOnly = Object.fromEntries(
+    Object.entries(customValues).filter(([name]) => !BUILTIN_VARS.has(name)),
+  );
+  return substitute(content, { ...builtinValues(clipboard, now), ...customOnly });
+}
+
 // Merge declared variable metadata (description / defaultValue) with
 // any custom variables detected in content. Declared values win on conflict.
 export function reconcileVariables(

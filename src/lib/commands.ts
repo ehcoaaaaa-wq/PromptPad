@@ -26,6 +26,14 @@ export async function writeStore(content: string): Promise<void> {
   return invoke("write_store", { content });
 }
 
+export async function backupStore(): Promise<string | null> {
+  return invoke("backup_store");
+}
+
+export async function quitApp(): Promise<void> {
+  return invoke("quit_app");
+}
+
 export {
   readText,
   writeText,

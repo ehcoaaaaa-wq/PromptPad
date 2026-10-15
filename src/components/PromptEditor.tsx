@@ -11,9 +11,11 @@ import { pushToast } from "../hooks/useToast";
 export function PromptEditor({
   prompt,
   onUse,
+  onDirtyChange,
 }: {
   prompt: Prompt | null;
   onUse: (p: Prompt) => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [draft, setDraft] = useState<Prompt | null>(null);
 
@@ -21,6 +23,13 @@ export function PromptEditor({
   useEffect(() => {
     setDraft(prompt);
   }, [prompt?.id]);
+
+  const dirty = Boolean(draft && prompt && draft.id === prompt.id && (
+    draft.title !== prompt.title || draft.content !== prompt.content ||
+    JSON.stringify(draft.tags) !== JSON.stringify(prompt.tags) ||
+    draft.favorite !== prompt.favorite || draft.pinned !== prompt.pinned
+  ));
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   if (!draft) {
     return (
@@ -36,19 +45,43 @@ export function PromptEditor({
   const sync = (patch: Partial<Prompt>) =>
     setDraft({ ...draft, ...patch });
 
-  const save = () => {
+  const save = async () => {
     if (!draft.title.trim()) {
       pushToast("error", "标题不能为空");
       return;
     }
-    updatePrompt(draft.id, { ...draft, variables });
-    pushToast("success", "已保存");
+    try {
+      await updatePrompt(draft.id, { ...draft, variables });
+      pushToast("success", "已保存");
+    } catch {
+      // The store reports the write failure and keeps the in-memory draft.
+    }
   };
 
-  const remove = () => {
+  const remove = async () => {
     if (!confirm(`删除模板"${draft.title || "(未命名)"}"？`)) return;
-    deletePrompt(draft.id);
-    pushToast("info", "已删除");
+    try {
+      await deletePrompt(draft.id);
+      pushToast("info", "已删除");
+    } catch {
+      // The store reports the write failure.
+    }
+  };
+
+  const usePrompt = async () => {
+    if (!draft.title.trim()) {
+      pushToast("error", "标题不能为空");
+      return;
+    }
+    const ready = { ...draft, variables };
+    if (dirty) {
+      try {
+        await updatePrompt(draft.id, ready);
+      } catch {
+        return;
+      }
+    }
+    onUse(ready);
   };
 
   const charCount = draft.content.length;
@@ -90,6 +123,7 @@ export function PromptEditor({
         <span>{variables.length} 变量</span>
         <span className="text-zinc-300 dark:text-zinc-600">·</span>
         <span>{updatedRel}</span>
+        {dirty && <span className="text-amber-600 dark:text-amber-400">未保存</span>}
       </div>
       <input
         value={draft.tags.join(", ")}
@@ -117,20 +151,20 @@ export function PromptEditor({
         />
         <div className="flex-1" />
         <button
-          onClick={remove}
+          onClick={() => void remove()}
           className="px-3 py-1.5 rounded-md text-rose-500 hover:bg-rose-500/10 transition-colors flex items-center gap-1.5"
         >
           <Trash2 className="w-3.5 h-3.5" />
           删除
         </button>
         <button
-          onClick={save}
+          onClick={() => void save()}
           className="px-3 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
         >
           保存
         </button>
         <button
-          onClick={() => onUse(draft)}
+          onClick={() => void usePrompt()}
           className="px-3 py-1.5 rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm"
         >
           <Clipboard className="w-3.5 h-3.5" />

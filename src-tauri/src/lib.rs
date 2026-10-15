@@ -14,7 +14,11 @@
 
 use std::fs;
 use std::path::PathBuf;
-use tauri::WindowEvent;
+use tauri::{
+    Emitter, Manager, WindowEvent,
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+};
 
 const STORE_FILE: &str = "prompts.json";
 
@@ -39,15 +43,84 @@ async fn read_store() -> Result<String, String> {
 
 #[tauri::command]
 async fn write_store(content: String) -> Result<(), String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("invalid store JSON: {e}"))?;
+    if !valid_store(&parsed) {
+        return Err("invalid store structure".into());
+    }
+
     let path = store_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create parent: {e}"))?;
     }
-    // Atomic write: write to .tmp, then rename. Avoids partial corruption if interrupted.
+    // Preserve an unreadable store before replacing it with valid data.
+    if path.exists() {
+        let existing =
+            fs::read_to_string(&path).map_err(|e| format!("read existing store: {e}"))?;
+        if !serde_json::from_str::<serde_json::Value>(&existing)
+            .is_ok_and(|value| valid_store(&value))
+        {
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| format!("system clock: {e}"))?
+                .as_secs();
+            let backup = path.with_file_name(format!("prompts.corrupt-{stamp}.json"));
+            fs::copy(&path, &backup).map_err(|e| format!("back up damaged store: {e}"))?;
+        }
+    }
+    // Write to .tmp, then replace the existing file.
     let tmp = path.with_extension("json.tmp");
     fs::write(&tmp, &content).map_err(|e| format!("write tmp: {e}"))?;
     fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))?;
     Ok(())
+}
+
+fn valid_store(value: &serde_json::Value) -> bool {
+    let Some(prompts) = value.get("prompts").and_then(|v| v.as_array()) else {
+        return false;
+    };
+    value.get("schemaVersion").and_then(|v| v.as_u64()) == Some(1)
+        && value.get("settings").is_some_and(|v| v.is_object())
+        && prompts.iter().all(|prompt| {
+            prompt
+                .get("id")
+                .and_then(|v| v.as_str())
+                .is_some_and(|v| !v.is_empty())
+                && prompt.get("title").is_some_and(|v| v.is_string())
+                && prompt.get("content").is_some_and(|v| v.is_string())
+                && prompt
+                    .get("tags")
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|tags| tags.iter().all(|v| v.is_string()))
+                && prompt
+                    .get("variables")
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|variables| {
+                        variables
+                            .iter()
+                            .all(|v| v.get("name").is_some_and(|name| name.is_string()))
+                    })
+        })
+}
+
+#[tauri::command]
+async fn backup_store() -> Result<Option<String>, String> {
+    let path = store_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("system clock: {e}"))?
+        .as_millis();
+    let backup = path.with_file_name(format!("prompts.backup-{stamp}.json"));
+    fs::copy(&path, &backup).map_err(|e| format!("back up store: {e}"))?;
+    Ok(Some(backup.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 // Resolve the data directory. Order:
@@ -81,8 +154,6 @@ fn default_store_json() -> String {
     r#"{"schemaVersion":1,"prompts":[],"settings":{"autoLaunch":false}}"#.to_string()
 }
 
-// Window close → hide to tray (closing the window should NOT exit the app).
-// Quit only happens through the explicit "Quit" menu item.
 fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
     if let WindowEvent::CloseRequested { api, .. } = event {
         let _ = window.hide();
@@ -93,19 +164,64 @@ fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec![]),
+            Some(vec!["--autostart"]),
         ))
         .invoke_handler(tauri::generate_handler![
             get_data_dir,
             read_store,
-            write_store
+            write_store,
+            backup_store,
+            quit_app
         ])
+        .setup(|app| {
+            let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "退出 PromptPad", true, None::<&str>)?;
+            let force_quit = MenuItem::with_id(app, "force_quit", "强制退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &quit, &force_quit])?;
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().expect("window icon").clone())
+                .tooltip("PromptPad")
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                        let _ = app.emit("promptpad-quit-requested", ());
+                    }
+                    "force_quit" => app.exit(0),
+                    _ => {}
+                })
+                .build(app)?;
+            if std::env::args_os().any(|arg| arg.to_string_lossy() == "--autostart") {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+            Ok(())
+        })
         .on_window_event(handle_window_event)
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

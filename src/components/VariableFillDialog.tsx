@@ -3,7 +3,7 @@ import type { Prompt } from "../types";
 import {
   BUILTIN_VARS,
   builtinValues,
-  substitute,
+  renderTemplate,
   reconcileVariables,
   extractVariableNames,
 } from "../lib/variables";
@@ -28,16 +28,17 @@ export function VariableFillDialog({
     // Seed declared defaults; clipboard is read once on mount.
     const init: Record<string, string> = {};
     variables.forEach((v) => {
-      init[v.name] = v.defaultValue ?? "";
+      if (!BUILTIN_VARS.has(v.name)) init[v.name] = v.defaultValue ?? "";
     });
     setValues(init);
-    readText().then(setClipboard).catch(() => setClipboard(""));
+    if (contentVars.includes("clipboard")) {
+      readText().then(setClipboard).catch(() => setClipboard(""));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompt.id]);
 
   const onCopy = async () => {
-    const merged = { ...builtinValues(clipboard), ...values };
-    const result = substitute(prompt.content, merged);
+    const result = renderTemplate(prompt.content, values, clipboard);
     try {
       await writeText(result);
       pushToast("success", "已复制到剪贴板");
@@ -46,6 +47,8 @@ export function VariableFillDialog({
       pushToast("error", "复制失败：" + String(e));
     }
   };
+
+  const builtins = builtinValues(clipboard);
 
   return (
     <div
@@ -74,10 +77,7 @@ export function VariableFillDialog({
         )}
         {variables.map((v) => {
           const builtin = BUILTIN_VARS.has(v.name);
-          const displayValue =
-            builtin && v.name === "clipboard"
-              ? clipboard
-              : (values[v.name] ?? "");
+          const displayValue = builtin ? builtins[v.name] : (values[v.name] ?? "");
           return (
             <label key={v.name} className="flex flex-col gap-1 text-sm">
               <span className="font-medium flex items-center gap-2">

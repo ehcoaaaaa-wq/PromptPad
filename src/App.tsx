@@ -1,13 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
-import { Plus, Sun, Moon, Monitor } from "lucide-react";
-import { useStore, initStore, addPrompt, setSettings } from "./store";
+import { listen } from "@tauri-apps/api/event";
+import { Plus, Sun, Moon, Monitor, Settings } from "lucide-react";
+import { useStore, initStore, addPrompt, flushWrites, setSettings } from "./store";
+import { quitApp } from "./lib/commands";
+import { pushToast } from "./hooks/useToast";
 import { Sidebar, type SidebarSelection } from "./components/Sidebar";
 import { SearchBar } from "./components/SearchBar";
 import { PromptList } from "./components/PromptList";
 import { PromptEditor } from "./components/PromptEditor";
 import { VariableFillDialog } from "./components/VariableFillDialog";
 import { ImportExportMenu } from "./components/ImportExportMenu";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { ToastList } from "./components/Toast";
 import type { Prompt } from "./types";
 
@@ -17,9 +21,35 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [fillTarget, setFillTarget] = useState<Prompt | null>(null);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = editorDirty;
+  const [loaded, setLoaded] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
-    void initStore();
+    void initStore().finally(() => setLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen("promptpad-quit-requested", async () => {
+      if (dirtyRef.current && !confirm("当前模板有未保存修改，仍要退出？")) return;
+      try {
+        await flushWrites();
+        await quitApp();
+      } catch (e) {
+        pushToast("error", "退出前保存失败：" + String(e));
+      }
+    }).then((dispose) => {
+      if (active) unlisten = dispose;
+      else dispose();
+    }).catch((e) => pushToast("error", "托盘退出监听失败：" + String(e)));
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   }, []);
 
   // Sync the active theme to <html data-theme>; honor "system" via media query.
@@ -69,6 +99,8 @@ export default function App() {
     : null;
 
   const onNew = () => {
+    if (!loaded) return;
+    if (editorDirty && !confirm("当前模板有未保存修改，放弃修改并新建？")) return;
     const p = addPrompt({
       title: "新模板",
       content: "",
@@ -80,10 +112,16 @@ export default function App() {
     setSelectedId(p.id);
   };
 
+  const onSelectPrompt = (id: string) => {
+    if (id === selectedId) return;
+    if (editorDirty && !confirm("当前模板有未保存修改，放弃修改并切换？")) return;
+    setSelectedId(id);
+  };
+
   const cycleTheme = () => {
     const cur = store.settings.theme ?? "system";
     const next = cur === "light" ? "dark" : cur === "dark" ? "system" : "light";
-    setSettings({ theme: next });
+    void setSettings({ theme: next });
   };
 
   const currentTheme = store.settings.theme ?? "system";
@@ -99,6 +137,10 @@ export default function App() {
     system: "跟随系统",
   }[currentTheme];
 
+  if (!loaded) {
+    return <div className="h-full flex items-center justify-center text-sm text-zinc-500">正在读取模板库…</div>;
+  }
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
       <header className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
@@ -108,6 +150,7 @@ export default function App() {
         </div>
         <button
           onClick={onNew}
+          disabled={!loaded}
           className="w-8 h-8 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors flex items-center justify-center text-zinc-600 dark:text-zinc-300"
           title="新建"
         >
@@ -120,7 +163,14 @@ export default function App() {
         >
           <ThemeIcon className="w-4 h-4" />
         </button>
-        <ImportExportMenu />
+        <button
+          onClick={() => setShowSettings(true)}
+          className="w-8 h-8 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors flex items-center justify-center text-zinc-500 dark:text-zinc-400"
+          title="设置"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
+        <ImportExportMenu selectedPrompt={selected} hasUnsavedChanges={editorDirty} />
       </header>
       <div className="flex flex-1 overflow-hidden">
         <Sidebar selection={sel} onSelect={setSel} />
@@ -128,11 +178,11 @@ export default function App() {
           <PromptList
             prompts={filtered}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={onSelectPrompt}
             searchQuery={query}
           />
         </div>
-        <PromptEditor prompt={selected} onUse={setFillTarget} />
+        <PromptEditor prompt={selected} onUse={setFillTarget} onDirtyChange={setEditorDirty} />
       </div>
       {fillTarget && (
         <VariableFillDialog
@@ -140,6 +190,7 @@ export default function App() {
           onClose={() => setFillTarget(null)}
         />
       )}
+      {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       <ToastList />
     </div>
   );
