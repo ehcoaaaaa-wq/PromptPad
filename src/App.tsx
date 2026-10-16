@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { selectPrompts } from "./lib/prompt-list";
 import { listen } from "@tauri-apps/api/event";
-import { Plus, Sun, Moon, Monitor, Settings } from "lucide-react";
-import { useStore, initStore, addPrompt, flushWrites, setSettings } from "./store";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Plus, Redo2, Sun, Moon, Monitor, Settings, Undo2 } from "lucide-react";
+import { useStore, initStore, addPrompt, canRedo, canUndo, flushWrites, redo, refreshStore, setSettings, undo } from "./store";
 import { quitApp, getDataDir } from "./lib/commands";
 import { pushToast } from "./hooks/useToast";
 import { Sidebar, type SidebarSelection } from "./components/Sidebar";
@@ -14,8 +15,13 @@ import { ImportExportMenu } from "./components/ImportExportMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ToastList } from "./components/Toast";
 import type { Prompt } from "./types";
+import { QuickInsert } from "./components/QuickInsert";
 
 export default function App() {
+  return getCurrentWindow().label === "quick" ? <QuickInsert /> : <MainApp />;
+}
+
+function MainApp() {
   const store = useStore();
   const [sel, setSel] = useState<SidebarSelection>({ kind: "all" });
   const [query, setQuery] = useState("");
@@ -59,17 +65,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    const handleUndoKeys = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || !["z", "y"].includes(event.key.toLowerCase())) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, [contenteditable='true']") || dirtyRef.current) return;
+      event.preventDefault();
+      void (event.key.toLowerCase() === "y" || event.shiftKey ? redo() : undo()).catch(() => {});
+    };
+    document.addEventListener("keydown", handleUndoKeys);
+    return () => document.removeEventListener("keydown", handleUndoKeys);
+  }, []);
+
+  useEffect(() => {
     let active = true;
-    void listen("promptpad-global-shortcut", () => {
-      window.setTimeout(() => {
-        searchRef.current?.focus();
-        searchRef.current?.select();
-      }, 120);
-    }).then((dispose) => {
-      if (active) unlisten = dispose;
-      else dispose();
-    }).catch((error) => pushToast("error", "快捷键监听失败：" + String(error)));
+    let unlisten: (() => void) | undefined;
+    void listen("promptpad-store-updated", () => { if (active) void refreshStore().catch(() => {}); })
+      .then((dispose) => { if (active) unlisten = dispose; else dispose(); });
     return () => { active = false; unlisten?.(); };
   }, []);
 
@@ -94,10 +105,11 @@ export default function App() {
     }
   }, [store.settings.theme]);
 
-  const filtered = useMemo(() => selectPrompts(store.prompts, sel, query), [store.prompts, sel, query]);
+  const sourcePrompts = sel.kind === "trash" ? store.trash.map((entry) => entry.prompt) : store.prompts;
+  const filtered = useMemo(() => selectPrompts(sourcePrompts, sel, query), [sourcePrompts, sel, query]);
 
   const selected = selectedId
-    ? (store.prompts.find((p) => p.id === selectedId) ?? null)
+    ? (sourcePrompts.find((p) => p.id === selectedId) ?? null)
     : null;
 
   const onNew = async () => {
@@ -172,6 +184,8 @@ export default function App() {
         >
           <Plus className="w-4 h-4" />
         </button>
+        <button onClick={() => void undo().catch(() => {})} disabled={!canUndo()} title="撤销（Ctrl+Z）" className="w-8 h-8 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-35 flex items-center justify-center"><Undo2 className="w-4 h-4" /></button>
+        <button onClick={() => void redo().catch(() => {})} disabled={!canRedo()} title="重做（Ctrl+Shift+Z）" className="w-8 h-8 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-35 flex items-center justify-center"><Redo2 className="w-4 h-4" /></button>
         <button
           onClick={cycleTheme}
           className="w-8 h-8 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition-colors flex items-center justify-center text-zinc-500 dark:text-zinc-400"
@@ -198,7 +212,7 @@ export default function App() {
             searchQuery={query}
           />
         </div>
-        <PromptEditor key={selected?.id ?? "empty"} prompt={selected} onUse={setFillTarget} onDirtyChange={setEditorDirty} />
+        <PromptEditor key={selected ? `${selected.id}:${selected.updatedAt}` : "empty"} prompt={selected} isTrashed={sel.kind === "trash"} onUse={setFillTarget} onDirtyChange={setEditorDirty} />
       </div>
       {fillTarget && (
         <VariableFillDialog

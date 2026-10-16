@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { backupStore, openDialog, saveDialog } from "../lib/commands";
 import { flushWrites, getState, useStore, replaceAll } from "../store";
-import type { ProjectProfile, Prompt } from "../types";
-import { mergeIncoming, parseIncoming, parseProjectProfiles, type ConflictAction } from "../lib/import";
+import type { ProjectProfile, Prompt, PromptFolder, PromptSnippet, TrashedPrompt } from "../types";
+import { mergeIncoming, normalizeFolders, parseIncoming, parseLibraryExtras, parseProjectProfiles, type ConflictAction } from "../lib/import";
 import { pushToast } from "../hooks/useToast";
 import { SkillExportDialog } from "./SkillExportDialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
@@ -13,6 +13,7 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<Prompt[] | null>(null);
   const [pendingProjects, setPendingProjects] = useState<ProjectProfile[] | null>(null);
+  const [pendingExtras, setPendingExtras] = useState<{ folders: PromptFolder[]; snippets: PromptSnippet[]; trash: TrashedPrompt[] } | null>(null);
   const [applying, setApplying] = useState(false);
   const [skillTarget, setSkillTarget] = useState<Prompt | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -74,6 +75,8 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
         `useCount: ${p.useCount ?? 0}`,
         ...(p.lastUsedAt ? [`lastUsedAt: ${JSON.stringify(p.lastUsedAt)}`] : []),
         `includesProjectContext: ${p.includesProjectContext === true}`,
+        `folderIds: ${JSON.stringify(p.folderIds ?? [])}`,
+        ...(p.blocks ? [`blocks: ${JSON.stringify(p.blocks)}`] : []),
         "---",
         "",
       ].join("\n");
@@ -110,12 +113,14 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
       const text = await readTextFile(path);
       const incoming = parseIncoming(path, text);
       const incomingProjects = parseProjectProfiles(path, text);
+      const incomingExtras = parseLibraryExtras(path, text);
       if (incoming.length === 0) {
         pushToast("info", "文件中没有模板");
         return;
       }
       setPending(incoming);
       setPendingProjects(incomingProjects);
+      setPendingExtras(incomingExtras);
     } catch (e) {
       pushToast("error", "导入失败：" + String(e));
     }
@@ -129,11 +134,17 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
       const current = getState();
       const next = mergeIncoming(current.prompts, pending, action);
       const nextProjects = pendingProjects ?? current.projects;
+      const nextFolders = pendingExtras ? normalizeFolders([...current.folders.filter((folder) => !pendingExtras.folders.some((item) => item.id === folder.id)), ...pendingExtras.folders]) : current.folders;
+      const nextSnippets = pendingExtras ? [...current.snippets.filter((snippet) => !pendingExtras.snippets.some((item) => item.id === snippet.id)), ...pendingExtras.snippets] : current.snippets;
+      const nextTrash = pendingExtras ? [...current.trash.filter((entry) => !pendingExtras.trash.some((item) => item.prompt.id === entry.prompt.id)), ...pendingExtras.trash] : current.trash;
       await backupStore();
       await replaceAll({
         ...current,
         prompts: next,
         projects: nextProjects,
+        folders: nextFolders,
+        snippets: nextSnippets,
+        trash: nextTrash,
         settings: {
           ...current.settings,
           activeProjectId: nextProjects.some((project) => project.id === current.settings.activeProjectId)
@@ -144,6 +155,7 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
       pushToast("success", `导入完成：当前共 ${next.length} 个模板`);
       setPending(null);
       setPendingProjects(null);
+      setPendingExtras(null);
     } catch (e) {
       pushToast("error", "导入失败：" + String(e));
     } finally {
@@ -182,14 +194,14 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
           <div className="w-full max-w-md rounded-xl bg-white dark:bg-zinc-900 p-5 shadow-xl border border-zinc-200 dark:border-zinc-800">
             <h2 className="text-base font-semibold">确认导入</h2>
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
-              文件包含 {pending.length} 个模板，其中 {conflicts} 个与现有模板 ID 相同{pendingProjects ? "，以及 " + pendingProjects.length + " 个项目背景" : ""}。导入前会在数据目录创建备份。
+              文件包含 {pending.length} 个模板，其中 {conflicts} 个与现有模板 ID 相同{pendingProjects ? "，以及 " + pendingProjects.length + " 个项目背景" : ""}{pendingExtras ? `、${pendingExtras.folders.length} 个文件夹和 ${pendingExtras.snippets.length} 个文本片段` : ""}。导入前会在数据目录创建备份。
             </p>
             <div className="mt-3 max-h-32 overflow-y-auto text-xs text-zinc-500">
               {pending.slice(0, 5).map((p) => <div key={p.id} className="truncate py-0.5">{p.title}</div>)}
               {pending.length > 5 && <div>另有 {pending.length - 5} 个模板</div>}
             </div>
             <div className="mt-5 flex flex-wrap justify-end gap-2 text-sm">
-              <button disabled={applying} onClick={() => { setPending(null); setPendingProjects(null); }} className="px-3 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800">取消</button>
+              <button disabled={applying} onClick={() => { setPending(null); setPendingProjects(null); setPendingExtras(null); }} className="px-3 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800">取消</button>
               {conflicts > 0 && <button disabled={applying} onClick={() => void applyImport("skip")} className="px-3 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800">跳过重复</button>}
               {conflicts > 0 && <button disabled={applying} onClick={() => void applyImport("copy")} className="px-3 py-1.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800">作为新模板</button>}
               <button disabled={applying} onClick={() => void applyImport(conflicts > 0 ? "replace" : "skip")} className="px-3 py-1.5 rounded-md bg-blue-500 text-white disabled:opacity-50">

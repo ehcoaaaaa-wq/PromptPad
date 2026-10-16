@@ -9,6 +9,7 @@ import {
   message as showMessage,
 } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import {
   isEnabled,
   enable,
@@ -50,6 +51,7 @@ export {
   saveDialog,
   showMessage,
   openUrl,
+  readTextFile,
   isEnabled,
   enable,
   disable,

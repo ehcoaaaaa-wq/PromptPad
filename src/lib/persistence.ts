@@ -11,11 +11,12 @@ export function createPersistence<T>(initial: T, write: (value: T) => Promise<vo
       ready = true;
       notify();
     },
-    update(updater: (value: T) => T): Promise<void> {
+    update(updater: (value: T) => T, onCommit?: (previous: T, next: T) => void): Promise<void> {
       if (!ready) return Promise.reject(new Error("模板库尚未成功读取，已禁止写入"));
       const operation = queue.then(async () => {
         const next = updater(state);
         await write(next);
+        onCommit?.(state, next);
         state = next;
         notify();
       });

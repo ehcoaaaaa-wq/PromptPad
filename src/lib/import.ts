@@ -1,4 +1,4 @@
-import type { ProjectProfile, Prompt } from "../types";
+import type { ProjectProfile, Prompt, PromptBlock, PromptFolder, PromptSnippet, TrashedPrompt } from "../types";
 
 type JsonObject = Record<string, unknown>;
 
@@ -54,7 +54,23 @@ function normalizePrompt(value: unknown, index: number): Prompt {
     useCount: (value.useCount as number | undefined) ?? 0,
     ...(typeof value.lastUsedAt === "string" ? { lastUsedAt: new Date(value.lastUsedAt).toISOString() } : {}),
     includesProjectContext: value.includesProjectContext === true,
+    folderIds: Array.isArray(value.folderIds) ? value.folderIds.filter((id): id is string => typeof id === "string") : [],
+    ...(Array.isArray(value.blocks) ? { blocks: normalizeBlocks(value.blocks, index) } : {}),
   };
+}
+
+function normalizeBlocks(value: unknown[], index: number): PromptBlock[] {
+  if (value.length > 200) throw new Error(`第 ${index + 1} 个模板的片段数量超过 200 个`);
+  return value.map((block, blockIndex) => {
+    if (!isObject(block) || typeof block.id !== "string" || !block.id || typeof block.type !== "string") {
+      throw new Error(`第 ${index + 1} 个模板的第 ${blockIndex + 1} 个片段格式不正确`);
+    }
+    if (block.type === "text" && typeof block.content === "string") return { id: block.id, type: "text", content: block.content };
+    if (block.type === "variable" && typeof block.name === "string" && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(block.name)) return { id: block.id, type: "variable", name: block.name };
+    if (block.type === "file" && (block.kind === "file" || block.kind === "image") && typeof block.path === "string") return { id: block.id, type: "file", kind: block.kind, path: block.path };
+    if (block.type === "snippet" && typeof block.snippetId === "string") return { id: block.id, type: "snippet", snippetId: block.snippetId };
+    throw new Error(`第 ${index + 1} 个模板的第 ${blockIndex + 1} 个片段内容无效`);
+  });
 }
 
 function frontmatterValue(frontmatter: string, key: string): string | undefined {
@@ -97,6 +113,8 @@ export function parseIncoming(path: string, text: string): Prompt[] {
       useCount: parseField(frontmatterValue(fm, "useCount"), undefined),
       lastUsedAt: parseField(frontmatterValue(fm, "lastUsedAt"), undefined),
       includesProjectContext: parseField(frontmatterValue(fm, "includesProjectContext"), false),
+      folderIds: parseField(frontmatterValue(fm, "folderIds"), []),
+      blocks: parseField(frontmatterValue(fm, "blocks"), undefined),
     }];
   }
   return normalizePrompts(raw);
@@ -114,6 +132,47 @@ export function normalizeProjectProfiles(value: unknown): ProjectProfile[] {
   });
   if (new Set(projects.map((project) => project.id)).size !== projects.length) throw new Error("项目背景 ID 重复");
   return projects;
+}
+
+export function normalizeFolders(value: unknown): PromptFolder[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 2000) throw new Error("文件夹格式无效或数量超过 2000 个");
+  const folders = value.map((item, index) => {
+    if (!isObject(item) || typeof item.id !== "string" || !item.id || typeof item.name !== "string" || !item.name.trim() || (item.parentId !== undefined && typeof item.parentId !== "string")) throw new Error(`第 ${index + 1} 个文件夹格式不正确`);
+    return { id: item.id, name: item.name.trim(), ...(typeof item.parentId === "string" ? { parentId: item.parentId } : {}) };
+  });
+  const ids = new Set(folders.map((folder) => folder.id));
+  if (ids.size !== folders.length || folders.some((folder) => folder.parentId && (!ids.has(folder.parentId) || folder.parentId === folder.id))) throw new Error("文件夹 ID 重复或父级无效");
+  for (const folder of folders) {
+    const seen = new Set([folder.id]);
+    let parentId = folder.parentId;
+    while (parentId) {
+      if (seen.has(parentId)) throw new Error("文件夹层级存在循环");
+      seen.add(parentId);
+      parentId = folders.find((item) => item.id === parentId)?.parentId;
+    }
+  }
+  return folders;
+}
+
+export function normalizeSnippets(value: unknown): PromptSnippet[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 2000) throw new Error("片段库格式无效或数量超过 2000 个");
+  const snippets = value.map((item, index) => {
+    if (!isObject(item) || typeof item.id !== "string" || !item.id || typeof item.name !== "string" || !item.name.trim() || typeof item.content !== "string") throw new Error(`第 ${index + 1} 个文本片段格式不正确`);
+    return { id: item.id, name: item.name.trim(), content: item.content };
+  });
+  if (new Set(snippets.map((snippet) => snippet.id)).size !== snippets.length) throw new Error("文本片段 ID 重复");
+  return snippets;
+}
+
+export function normalizeTrash(value: unknown): TrashedPrompt[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 10_000) throw new Error("回收站格式无效");
+  return value.map((item, index) => {
+    if (!isObject(item) || typeof item.deletedAt !== "string" || !Number.isFinite(Date.parse(item.deletedAt))) throw new Error(`回收站第 ${index + 1} 项格式不正确`);
+    return { prompt: normalizePrompt(item.prompt, index), deletedAt: new Date(item.deletedAt).toISOString() };
+  });
 }
 
 export function parseProjectProfiles(path: string, text: string): ProjectProfile[] | null {
@@ -135,6 +194,14 @@ export function normalizePrompts(raw: unknown, requireIds = false): Prompt[] {
 }
 
 export type ConflictAction = "skip" | "replace" | "copy";
+
+export function parseLibraryExtras(path: string, text: string): { folders: PromptFolder[]; snippets: PromptSnippet[]; trash: TrashedPrompt[] } | null {
+  if (!path.toLowerCase().endsWith(".json")) return null;
+  const parsed: unknown = JSON.parse(text);
+  if (!isObject(parsed) || !Array.isArray(parsed.prompts)) return null;
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  return { folders: normalizeFolders(parsed.folders), snippets: normalizeSnippets(parsed.snippets), trash: normalizeTrash(parsed.trash).filter((item) => Date.parse(item.deletedAt) > cutoff) };
+}
 
 export function mergeIncoming(existing: Prompt[], incoming: Prompt[], action: ConflictAction): Prompt[] {
   const byId = new Map(existing.map((prompt) => [prompt.id, prompt]));

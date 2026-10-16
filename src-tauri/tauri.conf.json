@@ -23,6 +23,22 @@
         "alwaysOnTop": false,
         "skipTaskbar": false,
         "resizable": true
+      },
+      {
+        "label": "quick",
+        "title": "PromptPad Quick Insert",
+        "url": "index.html",
+        "width": 720,
+        "height": 520,
+        "minWidth": 520,
+        "minHeight": 360,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "center": true
       }
     ],
     "security": {

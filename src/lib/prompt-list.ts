@@ -2,7 +2,8 @@ import Fuse from "fuse.js";
 import type { Prompt } from "../types";
 
 export type PromptSelection =
-  | { kind: "all" | "favorites" | "pinned" | "recent" }
+  | { kind: "all" | "favorites" | "pinned" | "recent" | "trash" }
+  | { kind: "folder"; folderId: string }
   | { kind: "tag"; tag: string };
 
 export function selectPrompts(prompts: Prompt[], selection: PromptSelection, query: string): Prompt[] {
@@ -11,6 +12,7 @@ export function selectPrompts(prompts: Prompt[], selection: PromptSelection, que
   if (selection.kind === "pinned") list = list.filter((p) => p.pinned);
   if (selection.kind === "recent") list = list.filter((p) => p.lastUsedAt);
   if (selection.kind === "tag") list = list.filter((p) => p.tags.includes(selection.tag));
+  if (selection.kind === "folder") list = list.filter((p) => p.folderIds?.includes(selection.folderId));
   if (query.trim()) {
     return new Fuse(list, {
       keys: [{ name: "title", weight: 3 }, { name: "tags", weight: 2 }, { name: "content", weight: 1 }],

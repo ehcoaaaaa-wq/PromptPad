@@ -8,7 +8,8 @@ import type { Variable } from "../types";
 
 const VAR_REGEX = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
 
-export const BUILTIN_VARS = new Set(["date", "time", "datetime", "clipboard", "project_context"]);
+export const BUILTIN_VARS = new Set(["date", "time", "datetime", "clipboard", "selection", "file", "image", "project_context"]);
+const OPTIONAL_BUILTIN_VARS = new Set(["date", "time", "datetime", "clipboard", "project_context"]);
 
 export function extractVariableNames(content: string): string[] {
   const found = new Set<string>();
@@ -36,6 +37,9 @@ export function builtinValues(
   clipboard: string,
   now = new Date(),
   projectContext = "",
+  selection = clipboard,
+  file = "",
+  image = "",
 ): Record<string, string> {
   const pad = (n: number) => String(n).padStart(2, "0");
   return {
@@ -45,6 +49,9 @@ export function builtinValues(
       now.getDate(),
     )} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
     clipboard,
+    selection,
+    file,
+    image,
     project_context: projectContext,
   };
 }
@@ -55,11 +62,14 @@ export function renderTemplate(
   clipboard: string,
   now = new Date(),
   projectContext = "",
+  selection = clipboard,
+  file = "",
+  image = "",
 ): string {
   const customOnly = Object.fromEntries(
     Object.entries(customValues).filter(([name]) => !BUILTIN_VARS.has(name)),
   );
-  return substitute(content, { ...builtinValues(clipboard, now, projectContext), ...customOnly });
+  return substitute(content, { ...builtinValues(clipboard, now, projectContext, selection, file, image), ...customOnly });
 }
 
 // Merge declared variable metadata (description / defaultValue) with
@@ -78,5 +88,5 @@ export function reconcileVariables(
 export function missingRequiredVariables(content: string, variables: Variable[], values: Record<string, string>): string[] {
   const metadata = new Map(variables.map((v) => [v.name, v]));
   return extractVariableNames(content).filter((name) =>
-    !BUILTIN_VARS.has(name) && metadata.get(name)?.required !== false && !values[name]?.trim());
+    !OPTIONAL_BUILTIN_VARS.has(name) && metadata.get(name)?.required !== false && !values[name]?.trim());
 }

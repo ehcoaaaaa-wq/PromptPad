@@ -133,7 +133,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         </section>
         <section className="mt-6 border-t border-zinc-200 dark:border-zinc-800 pt-4">
           <h3 className="text-sm font-medium">快速唤出</h3>
-          <p className="mt-1 text-xs text-zinc-500">在其他应用中按下快捷键，会显示 PromptPad 并聚焦搜索框。</p>
+          <p className="mt-1 text-xs text-zinc-500">在其他应用中按下快捷键，会打开无边框快速搜索；回车可复制模板或填写变量。</p>
           <div className="mt-2 flex gap-2">
             <input value={shortcut} onChange={(event) => setShortcut(event.target.value)} aria-label="全局快捷键" placeholder="CommandOrControl+Shift+Space" className="min-w-0 flex-1 px-2 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-700 bg-transparent text-sm font-mono" />
             <button disabled={savingShortcut} onClick={() => void saveShortcut()} className="px-3 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-sm disabled:opacity-50">{savingShortcut ? "设置中…" : "设置快捷键"}</button>

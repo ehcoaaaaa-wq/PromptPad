@@ -8,7 +8,8 @@ import {
   extractVariableNames,
   missingRequiredVariables,
 } from "../lib/variables";
-import { openUrl, writeText, readText } from "../lib/commands";
+import { openDialog, openUrl, writeText, readText } from "../lib/commands";
+import { readTextFile, stat } from "@tauri-apps/plugin-fs";
 import { pushToast } from "../hooks/useToast";
 import { ArrowUpRight, Copy, X } from "lucide-react";
 import { recordPromptUse, setSettings, useStore } from "../store";
@@ -29,10 +30,13 @@ export function VariableFillDialog({
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [clipboard, setClipboard] = useState("");
+  const [selection, setSelection] = useState("");
+  const [fileContent, setFileContent] = useState("");
+  const [imagePath, setImagePath] = useState("");
   const [previewTime] = useState(() => new Date());
   const [copying, setCopying] = useState(false);
   const copyingRef = useRef(false);
-  const [clipboardLoading, setClipboardLoading] = useState(contentVars.includes("clipboard"));
+  const [clipboardLoading, setClipboardLoading] = useState(contentVars.includes("clipboard") || contentVars.includes("selection"));
   const [clipboardError, setClipboardError] = useState(false);
   const close = () => { if (!copyingRef.current) onClose(); };
 
@@ -44,8 +48,8 @@ export function VariableFillDialog({
     });
     setValues(init);
     let active = true;
-    if (contentVars.includes("clipboard")) {
-      readText().then((text) => { if (active) setClipboard(text); })
+    if (contentVars.includes("clipboard") || contentVars.includes("selection")) {
+      readText().then((text) => { if (active) { setClipboard(text); setSelection(text); } })
         .catch(() => { if (active) setClipboardError(true); })
         .finally(() => { if (active) setClipboardLoading(false); });
     }
@@ -53,9 +57,9 @@ export function VariableFillDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompt.id]);
 
-  const missing = missingRequiredVariables(prompt.content, variables, values);
+  const missing = missingRequiredVariables(prompt.content, variables, { ...values, selection, file: fileContent, image: imagePath });
   const contextValue = project?.background ?? "";
-  const rendered = renderTemplate(prompt.content, values, clipboard, previewTime, contextValue);
+  const rendered = renderTemplate(prompt.content, values, clipboard, previewTime, contextValue, selection, fileContent, imagePath);
   const contextPrefix = project && contextValue.trim() && !prompt.includesProjectContext && !contentVars.includes("project_context")
     ? "项目背景（" + project.name + "）：\n" + contextValue.trim() + "\n\n"
     : "";
@@ -103,7 +107,18 @@ export function VariableFillDialog({
     }
   };
 
-  const builtins = builtinValues(clipboard, previewTime, contextValue);
+  const builtins = builtinValues(clipboard, previewTime, contextValue, selection, fileContent, imagePath);
+
+  const chooseInputFile = async (name: "file" | "image") => {
+    try {
+      const selected = await openDialog({ multiple: false, filters: [{ name: name === "image" ? "图片" : "文本文件", extensions: name === "image" ? ["png", "jpg", "jpeg", "webp", "gif"] : ["txt", "md", "json", "csv", "ts", "tsx", "js", "py", "rs"] }] });
+      if (typeof selected !== "string") return;
+      if (name === "image") { setImagePath(selected); return; }
+      const info = await stat(selected);
+      if (info.size > 1_000_000) { pushToast("error", "文件超过 1 MB，请选择较小的文本文件"); return; }
+      setFileContent(await readTextFile(selected));
+    } catch (error) { pushToast("error", "读取文件失败：" + String(error)); }
+  };
 
   return (
     <div
@@ -112,7 +127,7 @@ export function VariableFillDialog({
     >
       <div
         role="dialog" aria-modal="true" aria-label="填写变量与复制预览"
-        className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl w-full max-w-2xl p-5 flex flex-col gap-3 max-h-[80vh] overflow-y-auto border border-zinc-200 dark:border-zinc-800"
+        className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl w-full max-w-5xl p-5 flex flex-col gap-3 max-h-[90vh] border border-zinc-200 dark:border-zinc-800"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2">
@@ -126,6 +141,8 @@ export function VariableFillDialog({
             <X className="w-4 h-4" />
           </button>
         </div>
+        <div className="grid flex-1 min-h-0 grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="min-h-0 max-h-[65vh] overflow-y-auto pr-1 flex flex-col gap-3">
         {variables.length === 0 && (
           <div className="text-sm text-zinc-500 dark:text-zinc-400">
             此模板没有变量，直接复制即可。
@@ -166,6 +183,7 @@ export function VariableFillDialog({
                     内置
                   </span>
                 )}
+                {builtin && ["selection", "file", "image"].includes(v.name) && <span className="text-xs text-zinc-500">必填</span>}
                 {v.description && (
                   <span className="text-xs text-zinc-500 dark:text-zinc-400 font-normal">
                     {v.description}
@@ -175,25 +193,33 @@ export function VariableFillDialog({
               </span>
               <textarea
                 value={displayValue}
-                rows={builtin && v.name !== "clipboard" ? 1 : 3}
-                disabled={(builtin && v.name !== "clipboard") || copying}
+                rows={builtin && !["clipboard", "selection", "file", "image"].includes(v.name) ? 1 : 3}
+                disabled={(builtin && !["clipboard", "selection", "file", "image"].includes(v.name)) || copying}
                 required={!builtin && v.required !== false}
                 onChange={(e) =>
-                  v.name === "clipboard" ? setClipboard(e.target.value) : setValues({ ...values, [v.name]: e.target.value })
+                  v.name === "clipboard" ? setClipboard(e.target.value)
+                    : v.name === "selection" ? setSelection(e.target.value)
+                      : v.name === "file" ? setFileContent(e.target.value)
+                        : v.name === "image" ? setImagePath(e.target.value)
+                          : setValues({ ...values, [v.name]: e.target.value })
                 }
+                placeholder={v.name === "selection" ? "请先在其他应用复制选中的文字" : v.name === "file" ? "选择不超过 1 MB 的文本文件，或直接输入" : v.name === "image" ? "选择图片后会填入本机路径；不会 OCR 或上传图片" : undefined}
                 className="px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 focus:bg-white dark:focus:bg-zinc-900 disabled:opacity-60 focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
               />
+              {(v.name === "file" || v.name === "image") && <button type="button" disabled={copying} onClick={() => void chooseInputFile(v.name)} className="self-start text-xs text-blue-600 dark:text-blue-400">选择{v.name === "image" ? "图片" : "文本文件"}</button>}
             </label>
           );
         })}
         {clipboardLoading && <p className="text-xs text-zinc-500">正在读取剪贴板…</p>}
         {clipboardError && <p role="alert" className="text-xs text-amber-600">剪贴板读取失败，请在上方手动填写内容。</p>}
         {missing.length > 0 && <p className="text-xs text-amber-600">请填写必填变量：{missing.join("、")}</p>}
-        <section className="border-t border-zinc-200 dark:border-zinc-800 pt-3">
+        </div>
+        <section className="min-h-0 flex flex-col border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
           <h3 className="text-sm font-medium mb-2">复制预览</h3>
-          <pre className="whitespace-pre-wrap break-words text-xs bg-zinc-50 dark:bg-zinc-950 p-3 rounded-md max-h-60 overflow-auto">{result || "（内容为空）"}</pre>
+          <pre className="flex-1 min-h-32 whitespace-pre-wrap break-words text-xs bg-zinc-50 dark:bg-zinc-950 p-3 rounded-md overflow-auto">{result || "（内容为空）"}</pre>
           <p className="text-xs text-zinc-500 mt-1">复制内容与此预览一致；日期时间以打开本窗口时为准。</p>
         </section>
+        </div>
         <div className="flex gap-2 justify-end pt-2">
           <button
             onClick={close} disabled={copying}

@@ -262,7 +262,7 @@ fn store_path() -> PathBuf {
 }
 
 fn default_store_json() -> String {
-    r#"{"schemaVersion":1,"prompts":[],"projects":[],"settings":{"autoLaunch":false,"activeProjectId":null,"globalShortcut":"CommandOrControl+Shift+Space"}}"#.to_string()
+    r#"{"schemaVersion":1,"prompts":[],"projects":[],"folders":[],"snippets":[],"trash":[],"settings":{"autoLaunch":false,"activeProjectId":null,"globalShortcut":"CommandOrControl+Shift+Space"}}"#.to_string()
 }
 
 fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
@@ -284,11 +284,14 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, _shortcut, event| {
             if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                if let Some(window) = app.get_webview_window("main") {
+                if let Some(main) = app.get_webview_window("main") {
+                    let _ = main.hide();
+                }
+                if let Some(window) = app.get_webview_window("quick") {
                     let _ = window.unminimize();
                     let _ = window.show();
                     let _ = window.set_focus();
-                    let _ = app.emit("promptpad-global-shortcut", ());
+                    let _ = app.emit_to("quick", "promptpad-global-shortcut", ());
                 }
             }
         }).build())
