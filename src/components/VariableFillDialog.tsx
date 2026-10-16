@@ -109,7 +109,7 @@ export function VariableFillDialog({
 
   const builtins = builtinValues(clipboard, previewTime, contextValue, selection, fileContent, imagePath);
 
-  const chooseInputFile = async (name: "file" | "image") => {
+  const chooseInputFile = async (name: string) => {
     try {
       const selected = await openDialog({ multiple: false, filters: [{ name: name === "image" ? "图片" : "文本文件", extensions: name === "image" ? ["png", "jpg", "jpeg", "webp", "gif"] : ["txt", "md", "json", "csv", "ts", "tsx", "js", "py", "rs"] }] });
       if (typeof selected !== "string") return;
