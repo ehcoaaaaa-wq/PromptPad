@@ -8,10 +8,10 @@
 
 ## 从 GitHub 安装到 Codex
 
-本仓库的 Skill 文件发布到 GitHub 后，在 Codex 中使用内置 `skill-installer`，指定仓库 `ehcoaaaaa-wq/PromptPad` 和路径 `skills/promptpad-experts`。安装器会把整个 Skill 文件夹放到 Codex 可扫描的 Skill 目录。当前功能先位于 `codex/v03-reliability` 开发分支，安装时需指定该分支；合并进 `main` 后可省略 `--ref`。若使用命令行安装器，对应参数为：
+在 Codex 中使用内置 `skill-installer`，指定仓库 `ehcoaaaaa-wq/PromptPad`、`main` 分支和路径 `skills/promptpad-experts`。安装器会把整个 Skill 文件夹放到 Codex 可扫描的 Skill 目录。若使用命令行安装器，对应参数为：
 
 ```text
---repo ehcoaaaaa-wq/PromptPad --ref codex/v03-reliability --path skills/promptpad-experts
+--repo ehcoaaaaa-wq/PromptPad --ref main --path skills/promptpad-experts
 ```
 
 也可下载仓库，把 `skills/promptpad-experts` 整个文件夹复制到 Codex 的 Skill 目录中。不要只复制 `SKILL.md`，因为它还需要 `references/`。若未出现，重新打开 Codex 会话并确认 Skill 目录可被扫描。
