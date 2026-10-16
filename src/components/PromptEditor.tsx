@@ -47,7 +47,7 @@ export function PromptEditor({
 
   if (!draft) {
     return (
-      <div className="flex-1 flex items-center justify-center text-zinc-400 dark:text-zinc-500 text-sm">
+      <div className="editor-empty flex-1 flex items-center justify-center text-zinc-400 dark:text-zinc-500 text-sm">
         选择一个模板查看，或点 + 新建
       </div>
     );
@@ -144,14 +144,14 @@ export function PromptEditor({
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z" || dirty) return;
       event.preventDefault();
       void (event.shiftKey ? redo() : undo()).catch(() => {});
-    }} className="flex-1 min-w-0 flex flex-col p-5 gap-3 overflow-hidden">
+    }} className="editor-panel flex-1 min-w-0 flex flex-col p-5 gap-3 overflow-hidden">
       {isTrashed && <div className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">此模板在回收站中，可恢复或永久删除。</div>}
       <input
         disabled={isTrashed}
         value={draft.title}
         onChange={(e) => sync({ title: e.target.value })}
         placeholder="模板标题"
-        className="text-[20px] font-semibold tracking-tight px-2 py-1.5 -mx-2 rounded-md border-0 bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/60 focus:bg-zinc-100 dark:focus:bg-zinc-800/60 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+        className="editor-title text-[20px] font-semibold tracking-tight px-2 py-1.5 -mx-2 rounded-md border-0 bg-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800/60 focus:bg-zinc-100 dark:focus:bg-zinc-800/60 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
       />
       <div className="flex gap-1.5 items-center flex-wrap min-h-6">
         {variables.length === 0 && (
@@ -171,11 +171,11 @@ export function PromptEditor({
       </div>
       {!blocks ? (
         <>
-          <textarea disabled={isTrashed} value={draft.content} onChange={(e) => sync({ content: e.target.value })} placeholder={"模板正文，使用 {{var}} 占位符\n例如：请把以下代码重构：\n{{code}}"} className="flex-1 min-h-32 px-3 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 focus:bg-white dark:focus:bg-zinc-900 font-mono text-[13px] leading-relaxed resize-none focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20" />
+          <textarea disabled={isTrashed} value={draft.content} onChange={(e) => sync({ content: e.target.value })} placeholder={"模板正文，使用 {{var}} 占位符\n例如：请把以下代码重构：\n{{code}}"} className="editor-content flex-1 min-h-32 px-3 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 focus:bg-white dark:focus:bg-zinc-900 font-mono text-[13px] leading-relaxed resize-none focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20" />
           {!isTrashed && <button type="button" onClick={() => sync({ blocks: legacyBlocks(draft.content) })} className="self-start text-xs text-blue-600 dark:text-blue-400">拆分为多片段模板</button>}
         </>
       ) : (
-        <section className="flex-1 min-h-32 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-2 space-y-2">
+        <section className="editor-content block-stack flex-1 min-h-32 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-2 space-y-2">
           {blocks.map((block, index) => <div key={block.id} className="flex gap-1.5 items-start rounded-md bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 p-2">
             <div className="flex flex-col shrink-0">
               <button disabled={isTrashed || index === 0} onClick={() => moveBlock(index, -1)} title="上移" className="p-0.5 disabled:opacity-30"><ArrowUp className="w-3 h-3" /></button>
@@ -200,7 +200,7 @@ export function PromptEditor({
           </div>
         </section>
       )}
-      <div className="flex items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
+      <div className="editor-meta flex items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
         <span>{charCount} 字</span>
         <span className="text-zinc-300 dark:text-zinc-600">·</span>
         <span>{variables.length} 变量</span>
@@ -241,7 +241,7 @@ export function PromptEditor({
         placeholder="标签（逗号分隔）"
         className="px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-800 bg-transparent text-sm focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20"
       />
-      <div className="flex gap-1.5 items-center text-sm pt-1">
+      <div className="editor-actions flex gap-1.5 items-center text-sm pt-1">
         {!isTrashed && <Toggle
           checked={draft.favorite}
           onChange={(v) => sync({ favorite: v })}
@@ -254,12 +254,12 @@ export function PromptEditor({
         />}
         <div className="flex-1" />
         {isTrashed ? <>
-          <button onClick={() => void restorePrompt(draft.id).then(() => pushToast("success", "已恢复模板")).catch(() => {})} className="px-3 py-1.5 rounded-md bg-blue-500 text-white">恢复</button>
+          <button onClick={() => void restorePrompt(draft.id).then(() => pushToast("success", "已恢复模板")).catch(() => {})} className="editor-primary px-3 py-1.5 rounded-md bg-blue-500 text-white">恢复</button>
           <button onClick={() => { if (window.confirm("永久删除后无法恢复，确定删除？")) void permanentlyDeletePrompt(draft.id).then(() => pushToast("success", "已永久删除")).catch(() => {}); }} className="px-3 py-1.5 rounded-md text-rose-500 hover:bg-rose-500/10">永久删除</button>
         </> : <>
           <button onClick={() => void remove()} className="px-3 py-1.5 rounded-md text-rose-500 hover:bg-rose-500/10 transition-colors flex items-center gap-1.5"><Trash2 className="w-3.5 h-3.5" />删除</button>
-          <button onClick={() => void save()} className="px-3 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">保存</button>
-          <button onClick={() => void usePrompt()} className="px-3 py-1.5 rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm"><Clipboard className="w-3.5 h-3.5" />使用</button>
+          <button onClick={() => void save()} className="editor-secondary px-3 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">保存</button>
+          <button onClick={() => void usePrompt()} className="editor-primary px-3 py-1.5 rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm"><Clipboard className="w-3.5 h-3.5" />使用</button>
         </>}
       </div>
     </fieldset>

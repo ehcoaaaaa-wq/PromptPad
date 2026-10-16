@@ -30,7 +30,7 @@ export function Sidebar({ selection, onSelect }: { selection: SidebarSelection; 
   };
 
   return (
-    <aside className="w-56 shrink-0 p-2 overflow-y-auto text-sm border-r border-zinc-200 dark:border-zinc-800">
+    <aside className="library-sidebar w-56 shrink-0 p-2 overflow-y-auto text-sm border-r border-zinc-200 dark:border-zinc-800">
       <SectionTitle>视图</SectionTitle>
       <Item icon={<Hash className="w-3.5 h-3.5" />} label="全部" active={selection.kind === "all"} onClick={() => onSelect({ kind: "all" })} count={store.prompts.length} />
       <Item icon={<Star className="w-3.5 h-3.5 fill-current" />} iconClass="text-rose-500" label="收藏" active={selection.kind === "favorites"} onClick={() => onSelect({ kind: "favorites" })} count={store.prompts.filter((p) => p.favorite).length} />
@@ -63,7 +63,7 @@ function FolderBranch({ folder, depth, folders, prompts, selection, onSelect, on
   const count = prompts.filter((prompt) => prompt.folderIds?.includes(folder.id)).length;
   const active = selection.kind === "folder" && selection.folderId === folder.id;
   return <div>
-    <div className={"group flex items-center rounded-md mb-0.5 " + (active ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/60")} style={{ paddingLeft: 8 + depth * 14 }}>
+    <div className={"folder-branch group flex items-center rounded-md mb-0.5 " + (active ? "is-active bg-blue-500/10 text-blue-600 dark:text-blue-400" : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/60")} style={{ paddingLeft: 8 + depth * 14 }}>
       <button onClick={() => onSelect(folder.id)} className="min-w-0 flex-1 flex items-center gap-2 py-1.5 text-left">
         <Folder className="w-3.5 h-3.5 shrink-0 text-zinc-400" /><span className="truncate flex-1">{folder.name}</span><span className="text-[11px] text-zinc-400">{count}</span>
       </button>
@@ -76,11 +76,11 @@ function FolderBranch({ folder, depth, folders, prompts, selection, onSelect, on
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <div className="text-[10.5px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2.5 pt-2 pb-1">{children}</div>;
+  return <div className="sidebar-heading text-[10.5px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2.5 pt-2 pb-1">{children}</div>;
 }
 
 function Item({ label, icon, iconClass, active, onClick, count }: { label: string; icon?: React.ReactNode; iconClass?: string; active: boolean; onClick: () => void; count: number }) {
-  return <button onClick={onClick} className={"w-full text-left px-2.5 py-1.5 rounded-md flex items-center gap-2 mb-0.5 transition-colors " + (active ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : "hover:bg-zinc-100 dark:hover:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300")}>
+  return <button onClick={onClick} className={"sidebar-item w-full text-left px-2.5 py-1.5 rounded-md flex items-center gap-2 mb-0.5 transition-colors " + (active ? "is-active bg-blue-500/10 text-blue-600 dark:text-blue-400" : "hover:bg-zinc-100 dark:hover:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300")}>
     {icon && <span className={iconClass ?? "text-zinc-400"}>{icon}</span>}<span className="truncate flex-1">{label}</span><span className="text-[11.5px] text-zinc-400 dark:text-zinc-500">{count}</span>
   </button>;
 }

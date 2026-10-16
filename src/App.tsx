@@ -170,10 +170,10 @@ function MainApp() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-      <header className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
-        <div className="font-semibold text-[15px] tracking-tight pl-1">PromptPad</div>
-        <div className="flex-1 max-w-2xl">
+    <div className="app-shell flex flex-col h-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+      <header className="app-toolbar flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
+        <div className="brand-lockup"><span className="brand-mark">P</span><span className="font-semibold text-[15px] tracking-tight">PromptPad</span></div>
+        <div className="toolbar-search flex-1 max-w-2xl">
           <SearchBar value={query} onChange={setQuery} inputRef={searchRef} />
         </div>
         <button
@@ -204,7 +204,8 @@ function MainApp() {
       </header>
       <div className="flex flex-1 overflow-hidden">
         <Sidebar selection={sel} onSelect={setSel} />
-        <div className="w-72 border-r border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden">
+        <div className="prompt-pane w-72 border-r border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden">
+          <div className="prompt-pane-heading"><span>{selectionLabel(sel, store)}</span><span className="prompt-pane-count">{filtered.length}</span></div>
           <PromptList
             prompts={filtered}
             selectedId={selectedId}
@@ -224,4 +225,15 @@ function MainApp() {
       <ToastList />
     </div>
   );
+}
+
+function selectionLabel(selection: SidebarSelection, store: ReturnType<typeof useStore>) {
+  if (selection.kind === "all") return "全部模板";
+  if (selection.kind === "favorites") return "收藏";
+  if (selection.kind === "pinned") return "置顶";
+  if (selection.kind === "recent") return "最近使用";
+  if (selection.kind === "trash") return "回收站";
+  if (selection.kind === "tag") return `# ${selection.tag}`;
+  if (selection.kind === "folder") return store.folders.find((folder) => folder.id === selection.folderId)?.name ?? "文件夹";
+  return "模板";
 }
