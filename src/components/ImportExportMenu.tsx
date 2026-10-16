@@ -5,6 +5,7 @@ import { flushWrites, getState, useStore, replaceAll } from "../store";
 import type { Prompt } from "../types";
 import { mergeIncoming, parseIncoming, type ConflictAction } from "../lib/import";
 import { pushToast } from "../hooks/useToast";
+import { SkillExportDialog } from "./SkillExportDialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 
 export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { selectedPrompt: Prompt | null; hasUnsavedChanges: boolean }) {
@@ -12,6 +13,7 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<Prompt[] | null>(null);
   const [applying, setApplying] = useState(false);
+  const [skillTarget, setSkillTarget] = useState<Prompt | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   // Close on outside click.
@@ -75,6 +77,15 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
     } catch (e) {
       pushToast("error", "导出失败：" + String(e));
     }
+  };
+
+  const openSkillExport = (prompt: Prompt) => {
+    setOpen(false);
+    if (hasUnsavedChanges) {
+      pushToast("info", "请先保存当前模板，再导出 Skill");
+      return;
+    }
+    setSkillTarget(prompt);
   };
 
   const importFile = async () => {
@@ -142,6 +153,7 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
             <>
               <div className="border-t border-zinc-200 dark:border-zinc-800 my-1" />
               <MenuItem label="📄 导出当前模板为 Markdown" onClick={() => exportOne(selectedPrompt)} />
+              <MenuItem label="导出当前模板为 Codex Skill" onClick={() => openSkillExport(selectedPrompt)} />
             </>
           )}
         </div>
@@ -168,6 +180,7 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
           </div>
         </div>
       )}
+      {skillTarget && <SkillExportDialog prompt={skillTarget} onClose={() => setSkillTarget(null)} />}
     </div>
   );
 }

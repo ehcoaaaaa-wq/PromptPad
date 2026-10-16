@@ -119,6 +119,80 @@ async fn backup_store() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+async fn export_skill(parent_dir: String, name: String, content: String) -> Result<String, String> {
+    export_skill_to_dir(parent_dir, name, content)
+}
+
+fn export_skill_to_dir(
+    parent_dir: String,
+    name: String,
+    content: String,
+) -> Result<String, String> {
+    if name.is_empty()
+        || name.len() > 64
+        || name.starts_with('-')
+        || name.ends_with('-')
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Err("Skill 名称只能包含小写英文字母、数字和连字符，长度不超过 64".into());
+    }
+    if content.is_empty() || content.len() > 1_000_000 {
+        return Err("Skill 内容为空或超过 1 MB".into());
+    }
+    let parent = PathBuf::from(parent_dir);
+    if !parent.is_dir() {
+        return Err("请选择已存在的目标目录".into());
+    }
+    let skill_dir = parent.join(name);
+    fs::create_dir(&skill_dir).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            "同名 Skill 文件夹已存在，请修改名称或选择其他目录".to_string()
+        } else {
+            format!("创建 Skill 文件夹失败：{e}")
+        }
+    })?;
+    let skill_file = skill_dir.join("SKILL.md");
+    if let Err(e) = fs::write(&skill_file, content) {
+        let _ = fs::remove_file(&skill_file);
+        let _ = fs::remove_dir(&skill_dir);
+        return Err(format!("写入 SKILL.md 失败：{e}"));
+    }
+    Ok(skill_dir.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod skill_export_tests {
+    use super::export_skill_to_dir;
+
+    #[test]
+    fn export_creates_skill_and_never_overwrites_existing_folder() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("promptpad-skill-test-{unique}"));
+        std::fs::create_dir(&root).unwrap();
+        let parent = root.to_string_lossy().to_string();
+        let first = export_skill_to_dir(parent.clone(), "my-skill".into(), "first".into()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(std::path::Path::new(&first).join("SKILL.md")).unwrap(),
+            "first"
+        );
+        assert!(export_skill_to_dir(parent.clone(), "my-skill".into(), "second".into()).is_err());
+        assert_eq!(
+            std::fs::read_to_string(std::path::Path::new(&first).join("SKILL.md")).unwrap(),
+            "first"
+        );
+        assert!(export_skill_to_dir(parent, "../escape".into(), "bad".into()).is_err());
+        std::fs::remove_file(std::path::Path::new(&first).join("SKILL.md")).unwrap();
+        std::fs::remove_dir(first).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+}
+
+#[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
@@ -184,6 +258,7 @@ pub fn run() {
             read_store,
             write_store,
             backup_store,
+            export_skill,
             quit_app
         ])
         .setup(|app| {

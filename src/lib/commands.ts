@@ -30,6 +30,10 @@ export async function backupStore(): Promise<string | null> {
   return invoke("backup_store");
 }
 
+export async function exportSkill(parentDir: string, name: string, content: string): Promise<string> {
+  return invoke("export_skill", { parentDir, name, content });
+}
+
 export async function quitApp(): Promise<void> {
   return invoke("quit_app");
 }

@@ -8,6 +8,7 @@
 - 使用模板时填写变量；内置 `date`、`time`、`datetime` 和 `clipboard`。
 - 导入 JSON 或 Markdown；导入前预览数量及重复项，并自动备份现有模板库。
 - 导出整库 JSON 或单个 Markdown 模板。
+- 将当前模板预览并导出为独立 Codex Skill；仓库内另附可离线使用的双语专家库 Skill。
 - 关闭主窗口后可从系统托盘重新打开；正常退出会检查未保存修改，托盘也提供强制退出入口。
 - 重复启动时聚焦已有窗口，避免多个进程同时写入模板库。
 - 设置页可切换开机自启并查看数据目录；主题可切换浅色、深色或跟随系统。
@@ -32,3 +33,7 @@ pnpm tauri build
 ```
 
 安装包位于 `src-tauri/target/release/bundle/`。当前 v0.3 开发与验收安排见 [计划](docs/v0.3-plan.md)。
+
+## Codex Skill
+
+专家库安装、调用和从桌面端导出独立 Skill 的方法见 [Skill 使用说明](docs/skills.md)。GitHub 仓库中的 Skill 需要安装到 Codex 后才能被调用。
