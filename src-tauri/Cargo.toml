@@ -26,6 +26,7 @@ tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tauri-plugin-global-shortcut = "2"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -36,3 +37,15 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# dev profile: 减少磁盘占用,避免每次 cargo build 显著涨空间
+# - incremental=false: 不写 1.8GB 增量缓存
+# - debug="line-tables-only": 只保留行号,体积从完整 pdb(80-130MB/crate)缩到几 MB
+# - package."*": 把所有依赖的 debug 符号剥掉,opt-level=0 保持 debug 编译速度
+[profile.dev]
+incremental = false
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = 0
+opt-level = 0

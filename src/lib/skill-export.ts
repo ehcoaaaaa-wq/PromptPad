@@ -36,7 +36,7 @@ export function buildSkillMarkdown(prompt: Prompt, name: string, description: st
       : ["date", "time", "datetime"].includes(variable.name)
         ? "按当前任务环境中的日期或时间填写；无法确认时询问用户"
         : extra || "优先从当前任务获取；缺少关键值时询问用户";
-    return `- \`{{${variable.name}}}\`：${guidance}`;
+    return `- \`{{${variable.name}}}\`：${guidance}${variable.required === false ? "；此输入可选，未提供时使用空文本" : ""}`;
   });
 
   const title = prompt.title.trim().replace(/[\r\n]+/g, " ");

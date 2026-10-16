@@ -14,13 +14,51 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::{
-    Emitter, Manager, WindowEvent,
+    AppHandle, Emitter, Manager, State, WindowEvent,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 const STORE_FILE: &str = "prompts.json";
+const DEFAULT_GLOBAL_SHORTCUT: &str = "CommandOrControl+Shift+Space";
+
+struct ShortcutConfig(Mutex<String>);
+
+#[tauri::command]
+fn set_global_shortcut(app: AppHandle, state: State<'_, ShortcutConfig>, shortcut: String) -> Result<(), String> {
+    if !shortcut_has_modifier(&shortcut) {
+        return Err("快捷键必须包含修饰键，例如 CommandOrControl+Shift+Space".into());
+    }
+    let mut current = state.0.lock().map_err(|e| format!("读取快捷键状态失败：{e}"))?;
+    if *current == shortcut { return Ok(()); }
+    app.global_shortcut().register(shortcut.as_str()).map_err(|e| format!("无法注册快捷键（可能已被占用）：{e}"))?;
+    if !current.is_empty() {
+        if let Err(error) = app.global_shortcut().unregister(current.as_str()) {
+        let _ = app.global_shortcut().unregister(shortcut.as_str());
+        return Err(format!("无法替换原快捷键：{error}"));
+        }
+    }
+    *current = shortcut;
+    Ok(())
+}
+
+fn shortcut_has_modifier(shortcut: &str) -> bool {
+    let parts: Vec<_> = shortcut.split('+').map(str::trim).collect();
+    parts.len() >= 2 && parts[..parts.len() - 1].iter().any(|part| {
+        matches!(part.to_ascii_lowercase().as_str(), "commandorcontrol" | "ctrl" | "control" | "cmd" | "command" | "alt" | "option" | "shift")
+    })
+}
+
+fn saved_global_shortcut() -> String {
+    fs::read_to_string(store_path()).ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|value| value.pointer("/settings/globalShortcut").and_then(|v| v.as_str()).map(str::to_owned))
+        .filter(|value| shortcut_has_modifier(value))
+        .unwrap_or_else(|| DEFAULT_GLOBAL_SHORTCUT.to_string())
+}
 
 // Tauri commands are async to avoid blocking the UI thread on disk I/O.
 
@@ -224,8 +262,7 @@ fn store_path() -> PathBuf {
 }
 
 fn default_store_json() -> String {
-    // Versioned empty store — keep the same shape as the TS Store type.
-    r#"{"schemaVersion":1,"prompts":[],"settings":{"autoLaunch":false}}"#.to_string()
+    r#"{"schemaVersion":1,"prompts":[],"projects":[],"settings":{"autoLaunch":false,"activeProjectId":null,"globalShortcut":"CommandOrControl+Shift+Space"}}"#.to_string()
 }
 
 fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
@@ -245,6 +282,16 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, _shortcut, event| {
+            if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    let _ = app.emit("promptpad-global-shortcut", ());
+                }
+            }
+        }).build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -259,9 +306,30 @@ pub fn run() {
             write_store,
             backup_store,
             export_skill,
+            set_global_shortcut,
             quit_app
         ])
         .setup(|app| {
+            let requested_shortcut = saved_global_shortcut();
+            let shortcut = match app.global_shortcut().register(requested_shortcut.as_str()) {
+                Ok(()) => requested_shortcut,
+                Err(error) => {
+                    eprintln!("Saved global shortcut unavailable ({error}); trying default");
+                    if requested_shortcut != DEFAULT_GLOBAL_SHORTCUT {
+                        match app.global_shortcut().register(DEFAULT_GLOBAL_SHORTCUT) {
+                            Ok(()) => DEFAULT_GLOBAL_SHORTCUT.to_string(),
+                            Err(fallback) => {
+                                eprintln!("Default global shortcut unavailable ({fallback}); shortcut disabled");
+                                String::new()
+                            }
+                        }
+                    } else {
+                        eprintln!("Default global shortcut unavailable; shortcut disabled");
+                        String::new()
+                    }
+                }
+            };
+            app.manage(ShortcutConfig(Mutex::new(shortcut)));
             let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出 PromptPad", true, None::<&str>)?;
             let force_quit = MenuItem::with_id(app, "force_quit", "强制退出", true, None::<&str>)?;

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import Fuse from "fuse.js";
+import { selectPrompts } from "./lib/prompt-list";
 import { listen } from "@tauri-apps/api/event";
 import { Plus, Sun, Moon, Monitor, Settings } from "lucide-react";
 import { useStore, initStore, addPrompt, flushWrites, setSettings } from "./store";
-import { quitApp } from "./lib/commands";
+import { quitApp, getDataDir } from "./lib/commands";
 import { pushToast } from "./hooks/useToast";
 import { Sidebar, type SidebarSelection } from "./components/Sidebar";
 import { SearchBar } from "./components/SearchBar";
@@ -23,13 +23,19 @@ export default function App() {
   const [fillTarget, setFillTarget] = useState<Prompt | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const dirtyRef = useRef(false);
+  const searchRef = useRef<HTMLInputElement>(null);
   dirtyRef.current = editorDirty;
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [dataDirectory, setDataDirectory] = useState("");
   const [showSettings, setShowSettings] = useState(false);
 
-  useEffect(() => {
-    void initStore().finally(() => setLoaded(true));
-  }, []);
+  const load = async () => {
+    setLoadError(null);
+    try { await initStore(); setLoaded(true); }
+    catch (e) { setLoadError(String(e)); }
+  };
+  useEffect(() => { void load(); }, []);
 
   useEffect(() => {
     let active = true;
@@ -50,6 +56,21 @@ export default function App() {
       active = false;
       unlisten?.();
     };
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let active = true;
+    void listen("promptpad-global-shortcut", () => {
+      window.setTimeout(() => {
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }, 120);
+    }).then((dispose) => {
+      if (active) unlisten = dispose;
+      else dispose();
+    }).catch((error) => pushToast("error", "快捷键监听失败：" + String(error)));
+    return () => { active = false; unlisten?.(); };
   }, []);
 
   // Sync the active theme to <html data-theme>; honor "system" via media query.
@@ -73,43 +94,26 @@ export default function App() {
     }
   }, [store.settings.theme]);
 
-  // Apply sidebar filter, then fuzzy search, then sort (pinned first, then
-  // most recently updated).
-  const filtered = useMemo(() => {
-    let list = store.prompts;
-    if (sel.kind === "favorites") list = list.filter((p) => p.favorite);
-    if (sel.kind === "pinned") list = list.filter((p) => p.pinned);
-    if (sel.kind === "tag") list = list.filter((p) => p.tags.includes(sel.tag));
-    if (query.trim()) {
-      const fuse = new Fuse(list, {
-        keys: ["title", "content", "tags"],
-        threshold: 0.4,
-        ignoreLocation: true,
-      });
-      list = fuse.search(query).map((r) => r.item);
-    }
-    return [...list].sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      return b.updatedAt.localeCompare(a.updatedAt);
-    });
-  }, [store.prompts, sel, query]);
+  const filtered = useMemo(() => selectPrompts(store.prompts, sel, query), [store.prompts, sel, query]);
 
   const selected = selectedId
     ? (store.prompts.find((p) => p.id === selectedId) ?? null)
     : null;
 
-  const onNew = () => {
+  const onNew = async () => {
     if (!loaded) return;
     if (editorDirty && !confirm("当前模板有未保存修改，放弃修改并新建？")) return;
-    const p = addPrompt({
-      title: "新模板",
-      content: "",
-      tags: [],
-      variables: [],
-      favorite: false,
-      pinned: false,
-    });
-    setSelectedId(p.id);
+    try {
+      const p = await addPrompt({
+        title: "新模板",
+        content: "",
+        tags: [],
+        variables: [],
+        favorite: false,
+        pinned: false,
+      });
+      setSelectedId(p.id);
+    } catch { /* The store reports the write failure. */ }
   };
 
   const onSelectPrompt = (id: string) => {
@@ -121,7 +125,7 @@ export default function App() {
   const cycleTheme = () => {
     const cur = store.settings.theme ?? "system";
     const next = cur === "light" ? "dark" : cur === "dark" ? "system" : "light";
-    void setSettings({ theme: next });
+    void setSettings({ theme: next }).catch(() => {});
   };
 
   const currentTheme = store.settings.theme ?? "system";
@@ -138,6 +142,18 @@ export default function App() {
   }[currentTheme];
 
   if (!loaded) {
+    if (loadError) return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-sm bg-white dark:bg-zinc-950 dark:text-zinc-100">
+        <h1 className="text-lg font-semibold">无法读取模板库</h1>
+        <p>已暂停编辑和写入。请先备份并检查数据文件，再重试。</p>
+        <p role="alert" className="max-w-xl break-all text-rose-500">{loadError}</p>
+        <div className="flex gap-4">
+          <button onClick={() => void load()} className="px-3 py-2 rounded bg-blue-500 text-white">重新读取</button>
+          <button onClick={() => void getDataDir().then(setDataDirectory).catch((e) => setDataDirectory(String(e)))}>查看数据目录</button>
+        </div>
+        {dataDirectory && <p className="select-text break-all">{dataDirectory}</p>}
+      </div>
+    );
     return <div className="h-full flex items-center justify-center text-sm text-zinc-500">正在读取模板库…</div>;
   }
 
@@ -146,7 +162,7 @@ export default function App() {
       <header className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
         <div className="font-semibold text-[15px] tracking-tight pl-1">PromptPad</div>
         <div className="flex-1 max-w-2xl">
-          <SearchBar value={query} onChange={setQuery} />
+          <SearchBar value={query} onChange={setQuery} inputRef={searchRef} />
         </div>
         <button
           onClick={onNew}
@@ -182,7 +198,7 @@ export default function App() {
             searchQuery={query}
           />
         </div>
-        <PromptEditor prompt={selected} onUse={setFillTarget} onDirtyChange={setEditorDirty} />
+        <PromptEditor key={selected?.id ?? "empty"} prompt={selected} onUse={setFillTarget} onDirtyChange={setEditorDirty} />
       </div>
       {fillTarget && (
         <VariableFillDialog

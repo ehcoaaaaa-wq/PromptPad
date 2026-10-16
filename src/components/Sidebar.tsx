@@ -1,12 +1,9 @@
 import { useMemo } from "react";
-import { Star, Pin, Hash } from "lucide-react";
+import { Star, Pin, Hash, Clock } from "lucide-react";
+import type { PromptSelection } from "../lib/prompt-list";
 import { useStore } from "../store";
 
-export type SidebarSelection =
-  | { kind: "all" }
-  | { kind: "favorites" }
-  | { kind: "pinned" }
-  | { kind: "tag"; tag: string };
+export type SidebarSelection = PromptSelection;
 
 export function Sidebar({
   selection,
@@ -50,6 +47,9 @@ export function Sidebar({
         count={store.prompts.filter((p) => p.pinned).length}
       />
 
+      <Item icon={<Clock className="w-3.5 h-3.5" />} label="最近使用"
+        active={selection.kind === "recent"} onClick={() => onSelect({ kind: "recent" })}
+        count={store.prompts.filter((p) => p.lastUsedAt).length} />
       <SectionTitle>标签</SectionTitle>
       {tags.length === 0 && (
         <div className="px-2.5 py-1 text-zinc-400 dark:text-zinc-500 text-xs">

@@ -8,6 +8,7 @@ import {
   save as saveDialog,
   message as showMessage,
 } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   isEnabled,
   enable,
@@ -34,6 +35,10 @@ export async function exportSkill(parentDir: string, name: string, content: stri
   return invoke("export_skill", { parentDir, name, content });
 }
 
+export async function setGlobalShortcut(shortcut: string): Promise<void> {
+  return invoke("set_global_shortcut", { shortcut });
+}
+
 export async function quitApp(): Promise<void> {
   return invoke("quit_app");
 }
@@ -44,6 +49,7 @@ export {
   openDialog,
   saveDialog,
   showMessage,
+  openUrl,
   isEnabled,
   enable,
   disable,

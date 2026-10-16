@@ -8,7 +8,7 @@ import type { Variable } from "../types";
 
 const VAR_REGEX = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
 
-export const BUILTIN_VARS = new Set(["date", "time", "datetime", "clipboard"]);
+export const BUILTIN_VARS = new Set(["date", "time", "datetime", "clipboard", "project_context"]);
 
 export function extractVariableNames(content: string): string[] {
   const found = new Set<string>();
@@ -35,6 +35,7 @@ export function substitute(
 export function builtinValues(
   clipboard: string,
   now = new Date(),
+  projectContext = "",
 ): Record<string, string> {
   const pad = (n: number) => String(n).padStart(2, "0");
   return {
@@ -44,6 +45,7 @@ export function builtinValues(
       now.getDate(),
     )} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
     clipboard,
+    project_context: projectContext,
   };
 }
 
@@ -52,11 +54,12 @@ export function renderTemplate(
   customValues: Record<string, string>,
   clipboard: string,
   now = new Date(),
+  projectContext = "",
 ): string {
   const customOnly = Object.fromEntries(
     Object.entries(customValues).filter(([name]) => !BUILTIN_VARS.has(name)),
   );
-  return substitute(content, { ...builtinValues(clipboard, now), ...customOnly });
+  return substitute(content, { ...builtinValues(clipboard, now, projectContext), ...customOnly });
 }
 
 // Merge declared variable metadata (description / defaultValue) with
@@ -70,4 +73,10 @@ export function reconcileVariables(
     if (!byName.has(name)) byName.set(name, { name });
   }
   return Array.from(byName.values());
+}
+
+export function missingRequiredVariables(content: string, variables: Variable[], values: Record<string, string>): string[] {
+  const metadata = new Map(variables.map((v) => [v.name, v]));
+  return extractVariableNames(content).filter((name) =>
+    !BUILTIN_VARS.has(name) && metadata.get(name)?.required !== false && !values[name]?.trim());
 }

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Clipboard, Trash2 } from "lucide-react";
 import type { Prompt } from "../types";
-import { updatePrompt, deletePrompt } from "../store";
+import { updatePrompt, deletePrompt, useStore } from "../store";
 import {
   extractVariableNames,
   reconcileVariables,
+  BUILTIN_VARS,
 } from "../lib/variables";
 import { pushToast } from "../hooks/useToast";
 
@@ -17,7 +18,9 @@ export function PromptEditor({
   onUse: (p: Prompt) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const store = useStore();
   const [draft, setDraft] = useState<Prompt | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Re-seed draft when the user switches to a different prompt.
   useEffect(() => {
@@ -27,7 +30,9 @@ export function PromptEditor({
   const dirty = Boolean(draft && prompt && draft.id === prompt.id && (
     draft.title !== prompt.title || draft.content !== prompt.content ||
     JSON.stringify(draft.tags) !== JSON.stringify(prompt.tags) ||
-    draft.favorite !== prompt.favorite || draft.pinned !== prompt.pinned
+    JSON.stringify(draft.variables) !== JSON.stringify(prompt.variables) ||
+    draft.favorite !== prompt.favorite || draft.pinned !== prompt.pinned ||
+    draft.includesProjectContext !== prompt.includesProjectContext
   ));
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
@@ -46,15 +51,20 @@ export function PromptEditor({
     setDraft({ ...draft, ...patch });
 
   const save = async () => {
+    if (saving) return;
     if (!draft.title.trim()) {
       pushToast("error", "标题不能为空");
       return;
     }
+    setSaving(true);
     try {
       await updatePrompt(draft.id, { ...draft, variables });
+      setDraft({ ...draft, variables });
       pushToast("success", "已保存");
     } catch {
       // The store reports the write failure and keeps the in-memory draft.
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -69,26 +79,31 @@ export function PromptEditor({
   };
 
   const usePrompt = async () => {
+    if (saving) return;
     if (!draft.title.trim()) {
       pushToast("error", "标题不能为空");
       return;
     }
     const ready = { ...draft, variables };
     if (dirty) {
+      setSaving(true);
       try {
         await updatePrompt(draft.id, ready);
+        setDraft(ready);
       } catch {
         return;
+      } finally {
+        setSaving(false);
       }
     }
     onUse(ready);
   };
 
   const charCount = draft.content.length;
-  const updatedRel = relativeTime(draft.updatedAt);
+  const updatedRel = relativeTime(prompt?.updatedAt ?? draft.updatedAt);
 
   return (
-    <div className="flex-1 flex flex-col p-5 gap-3 overflow-hidden">
+    <fieldset disabled={saving} className="flex-1 min-w-0 flex flex-col p-5 gap-3 overflow-hidden">
       <input
         value={draft.title}
         onChange={(e) => sync({ title: e.target.value })}
@@ -124,7 +139,25 @@ export function PromptEditor({
         <span className="text-zinc-300 dark:text-zinc-600">·</span>
         <span>{updatedRel}</span>
         {dirty && <span className="text-amber-600 dark:text-amber-400">未保存</span>}
+        {saving && <span className="text-blue-500">保存中…</span>}
       </div>
+      {(variables.some((v) => !BUILTIN_VARS.has(v.name) && contentVars.includes(v.name)) || store.projects.length > 0) && (
+        <details className="text-xs max-h-40 overflow-auto shrink-0">
+          <summary className="cursor-pointer text-zinc-500">变量与项目设置</summary>
+          {store.projects.length > 0 && (
+            <label className="flex items-center gap-2 py-1">
+              <input type="checkbox" checked={draft.includesProjectContext === true} onChange={(e) => sync({ includesProjectContext: e.target.checked })} />
+              模板正文已包含项目背景，使用时不自动附加
+            </label>
+          )}
+          {variables.filter((v) => !BUILTIN_VARS.has(v.name) && contentVars.includes(v.name)).map((v) => (
+            <label key={v.name} className="flex items-center gap-2 py-1">
+              <input type="checkbox" checked={v.required !== false} onChange={(e) => sync({ variables: variables.map((item) => item.name === v.name ? { ...item, required: e.target.checked } : item) })} />
+              {`{{${v.name}}}`} 必填
+            </label>
+          ))}
+        </details>
+      )}
       <input
         value={draft.tags.join(", ")}
         onChange={(e) =>
@@ -171,7 +204,7 @@ export function PromptEditor({
           使用
         </button>
       </div>
-    </div>
+    </fieldset>
   );
 }
 

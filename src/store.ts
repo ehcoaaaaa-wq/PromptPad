@@ -1,61 +1,48 @@
 // Global store with React subscription.
 // Tiny pub/sub keeps the surface small; no Redux/Zustand for an MVP.
 //
-// Persistence model: any mutation triggers an async writeStore() via
-// the Rust command. We don't await the write in the mutation path — the UI
-// is already updated; errors are logged. This keeps typing snappy.
+// Mutations are queued and published after successful disk writes.
+// Editor drafts remain separate so a failed save stays visibly unsaved.
 
 import { useEffect, useState } from "react";
 import type { Store, Prompt, Settings } from "./types";
 import { DEFAULT_STORE } from "./types";
 import { readStore, writeStore } from "./lib/commands";
 import { pushToast } from "./hooks/useToast";
-import { normalizePrompts } from "./lib/import";
+import { normalizePrompts, normalizeProjectProfiles } from "./lib/import";
+import { createPersistence } from "./lib/persistence";
 
-let state: Store = DEFAULT_STORE;
 const listeners = new Set<() => void>();
 let initialized = false;
-let writeQueue: Promise<void> = Promise.resolve();
-let lastWriteError: unknown = null;
+let loading: Promise<void> | null = null;
+const persistence = createPersistence<Store>(DEFAULT_STORE, (value) => writeStore(JSON.stringify(value, null, 2)), notify);
 
 export function getState(): Store {
-  return state;
+  return persistence.get();
 }
 
 function notify(): void {
   listeners.forEach((l) => l());
 }
 
-function persist(): Promise<void> {
-  const snapshot = JSON.stringify(state, null, 2);
-  const write = writeQueue.then(() => writeStore(snapshot));
-  writeQueue = write.then(
-    () => { lastWriteError = null; },
-    (e) => {
-      lastWriteError = e;
-      console.error("writeStore failed", e);
-      pushToast("error", "保存失败，请检查数据目录或磁盘空间");
-    },
-  );
-  return write;
-}
-
 export async function flushWrites(): Promise<void> {
-  await writeQueue;
-  if (lastWriteError) throw lastWriteError;
+  await persistence.flush();
 }
 
-export function setState(updater: (s: Store) => Store): Promise<void> {
-  state = updater(state);
-  notify();
-  return persist();
+export async function setState(updater: (s: Store) => Store): Promise<void> {
+  try {
+    await persistence.update(updater);
+  } catch (e) {
+    pushToast("error", "保存失败，修改尚未保存，请重试：" + String(e));
+    throw e;
+  }
 }
 
 // --- mutation helpers ---
 
-export function addPrompt(
+export async function addPrompt(
   p: Omit<Prompt, "id" | "createdAt" | "updatedAt">,
-): Prompt {
+): Promise<Prompt> {
   const now = new Date().toISOString();
   const newPrompt: Prompt = {
     ...p,
@@ -63,7 +50,7 @@ export function addPrompt(
     createdAt: now,
     updatedAt: now,
   };
-  setState((s) => ({ ...s, prompts: [newPrompt, ...s.prompts] }));
+  await setState((s) => ({ ...s, prompts: [newPrompt, ...s.prompts] }));
   return newPrompt;
 }
 
@@ -72,10 +59,16 @@ export function updatePrompt(id: string, patch: Partial<Prompt>): Promise<void> 
     ...s,
     prompts: s.prompts.map((p) =>
       p.id === id
-        ? { ...p, ...patch, updatedAt: new Date().toISOString() }
+        ? { ...p, ...patch, lastUsedAt: p.lastUsedAt, useCount: p.useCount, updatedAt: new Date().toISOString() }
         : p,
     ),
   }));
+}
+
+export function recordPromptUse(id: string): Promise<void> {
+  return setState((s) => ({ ...s, prompts: s.prompts.map((p) => p.id === id
+    ? { ...p, useCount: (p.useCount ?? 0) + 1, lastUsedAt: new Date().toISOString() }
+    : p) }));
 }
 
 export function deletePrompt(id: string): Promise<void> {
@@ -101,12 +94,17 @@ export function useStore(): Store {
       listeners.delete(l);
     };
   }, []);
-  return state;
+  return persistence.get();
 }
 
 export async function initStore(): Promise<void> {
   if (initialized) return;
-  initialized = true;
+  if (loading) return loading;
+  loading = loadStore();
+  try { await loading; } finally { loading = null; }
+}
+
+async function loadStore(): Promise<void> {
   try {
     const json = await readStore();
     const parsed = JSON.parse(json) as Partial<Store>;
@@ -115,17 +113,23 @@ export async function initStore(): Promise<void> {
       throw new Error("不支持的数据文件格式");
     }
     const settings = parsed.settings;
-    state = {
+    const projects = normalizeProjectProfiles(parsed.projects);
+    persistence.initialize({
       schemaVersion: 1,
       prompts: normalizePrompts(parsed.prompts, true),
+      projects,
       settings: {
         autoLaunch: settings.autoLaunch === true,
         theme: ["light", "dark", "system"].includes(settings.theme) ? settings.theme : "system",
+        activeProjectId: typeof settings.activeProjectId === "string" && projects.some((project) => project.id === settings.activeProjectId) ? settings.activeProjectId : null,
+        globalShortcut: typeof settings.globalShortcut === "string" && settings.globalShortcut.trim() ? settings.globalShortcut : "CommandOrControl+Shift+Space",
       },
-    };
-    notify();
+    });
+    initialized = true;
   } catch (e) {
     console.error("init store failed", e);
     pushToast("error", "无法读取模板库；请先检查或备份数据文件");
+    throw e;
   }
 }
+

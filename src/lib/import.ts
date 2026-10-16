@@ -1,4 +1,4 @@
-import type { Prompt } from "../types";
+import type { ProjectProfile, Prompt } from "../types";
 
 type JsonObject = Record<string, unknown>;
 
@@ -20,12 +20,14 @@ function normalizePrompt(value: unknown, index: number): Prompt {
   if (value.variables !== undefined && (!Array.isArray(value.variables) || !value.variables.every(
     (variable) => isObject(variable) && typeof variable.name === "string" &&
       (variable.description === undefined || typeof variable.description === "string") &&
+      (variable.required === undefined || typeof variable.required === "boolean") &&
       (variable.defaultValue === undefined || typeof variable.defaultValue === "string"),
   ))) {
     throw new Error(`第 ${index + 1} 个模板的变量格式不正确`);
   }
   if ((value.favorite !== undefined && typeof value.favorite !== "boolean") ||
-    (value.pinned !== undefined && typeof value.pinned !== "boolean")) {
+    (value.pinned !== undefined && typeof value.pinned !== "boolean") ||
+    (value.includesProjectContext !== undefined && typeof value.includesProjectContext !== "boolean")) {
     throw new Error(`第 ${index + 1} 个模板的收藏或置顶状态格式不正确`);
   }
   if ((value.createdAt !== undefined && typeof value.createdAt !== "string") ||
@@ -33,6 +35,12 @@ function normalizePrompt(value: unknown, index: number): Prompt {
     throw new Error(`第 ${index + 1} 个模板的时间格式不正确`);
   }
   const now = new Date().toISOString();
+  if (value.useCount !== undefined && (!Number.isSafeInteger(value.useCount) || (value.useCount as number) < 0)) {
+    throw new Error(`第 ${index + 1} 个模板的使用次数无效`);
+  }
+  if (value.lastUsedAt !== undefined && (typeof value.lastUsedAt !== "string" || !Number.isFinite(Date.parse(value.lastUsedAt)))) {
+    throw new Error(`第 ${index + 1} 个模板的使用时间无效`);
+  }
   return {
     id: typeof value.id === "string" && value.id ? value.id : crypto.randomUUID(),
     title: value.title,
@@ -43,6 +51,9 @@ function normalizePrompt(value: unknown, index: number): Prompt {
     pinned: value.pinned === true,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : now,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : now,
+    useCount: (value.useCount as number | undefined) ?? 0,
+    ...(typeof value.lastUsedAt === "string" ? { lastUsedAt: new Date(value.lastUsedAt).toISOString() } : {}),
+    includesProjectContext: value.includesProjectContext === true,
   };
 }
 
@@ -83,9 +94,33 @@ export function parseIncoming(path: string, text: string): Prompt[] {
       pinned: parseField(frontmatterValue(fm, "pinned"), false),
       createdAt: parseField(frontmatterValue(fm, "createdAt"), undefined),
       updatedAt: parseField(frontmatterValue(fm, "updatedAt"), undefined),
+      useCount: parseField(frontmatterValue(fm, "useCount"), undefined),
+      lastUsedAt: parseField(frontmatterValue(fm, "lastUsedAt"), undefined),
+      includesProjectContext: parseField(frontmatterValue(fm, "includesProjectContext"), false),
     }];
   }
   return normalizePrompts(raw);
+}
+
+export function normalizeProjectProfiles(value: unknown): ProjectProfile[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 500) throw new Error("项目背景格式无效或数量超过 500 个");
+  const projects = value.map((item, index) => {
+    if (!isObject(item) || typeof item.id !== "string" || !item.id ||
+      typeof item.name !== "string" || !item.name.trim() || typeof item.background !== "string") {
+      throw new Error("第 " + (index + 1) + " 个项目背景格式不正确");
+    }
+    return { id: item.id, name: item.name.trim(), background: item.background };
+  });
+  if (new Set(projects.map((project) => project.id)).size !== projects.length) throw new Error("项目背景 ID 重复");
+  return projects;
+}
+
+export function parseProjectProfiles(path: string, text: string): ProjectProfile[] | null {
+  if (!path.toLowerCase().endsWith(".json")) return null;
+  const parsed: unknown = JSON.parse(text);
+  if (!isObject(parsed) || !("projects" in parsed)) return null;
+  return normalizeProjectProfiles(parsed.projects);
 }
 
 export function normalizePrompts(raw: unknown, requireIds = false): Prompt[] {
