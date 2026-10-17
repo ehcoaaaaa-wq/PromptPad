@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { selectPrompts } from "./lib/prompt-list";
+import { selectPrompts, type PromptSort } from "./lib/prompt-list";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Plus, Redo2, Sun, Moon, Monitor, Settings, Undo2 } from "lucide-react";
-import { useStore, initStore, addPrompt, canRedo, canUndo, flushWrites, redo, refreshStore, setSettings, undo } from "./store";
+import { useStore, initStore, addPrompt, canRedo, canUndo, deletePrompts, flushWrites, redo, refreshStore, setSettings, undo } from "./store";
 import { quitApp, getDataDir } from "./lib/commands";
 import { pushToast } from "./hooks/useToast";
 import { Sidebar, type SidebarSelection } from "./components/Sidebar";
@@ -26,6 +26,9 @@ function MainApp() {
   const [sel, setSel] = useState<SidebarSelection>({ kind: "all" });
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<PromptSort>("default");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedPromptIds, setSelectedPromptIds] = useState<string[]>([]);
   const [fillTarget, setFillTarget] = useState<Prompt | null>(null);
   const [editorDirty, setEditorDirty] = useState(false);
   const dirtyRef = useRef(false);
@@ -106,7 +109,12 @@ function MainApp() {
   }, [store.settings.theme]);
 
   const sourcePrompts = sel.kind === "trash" ? store.trash.map((entry) => entry.prompt) : store.prompts;
-  const filtered = useMemo(() => selectPrompts(sourcePrompts, sel, query), [sourcePrompts, sel, query]);
+  const filtered = useMemo(() => selectPrompts(sourcePrompts, sel, query, sortOrder), [sourcePrompts, sel, query, sortOrder]);
+
+  useEffect(() => {
+    setSelectionMode(false);
+    setSelectedPromptIds([]);
+  }, [sel, query]);
 
   const selected = selectedId
     ? (sourcePrompts.find((p) => p.id === selectedId) ?? null)
@@ -132,6 +140,36 @@ function MainApp() {
     if (id === selectedId) return;
     if (editorDirty && !confirm("当前模板有未保存修改，放弃修改并切换？")) return;
     setSelectedId(id);
+  };
+
+  const togglePromptSelection = (id: string) => {
+    setSelectedPromptIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  };
+
+  const toggleSelectAllVisible = () => {
+    const visibleIds = filtered.map((prompt) => prompt.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedPromptIds.includes(id));
+    setSelectedPromptIds((current) => allSelected
+      ? current.filter((id) => !visibleIds.includes(id))
+      : [...new Set([...current, ...visibleIds])]);
+  };
+
+  const deleteSelectedPrompts = async () => {
+    const visibleIds = new Set(filtered.map((prompt) => prompt.id));
+    const ids = selectedPromptIds.filter((id) => visibleIds.has(id));
+    if (ids.length === 0) return;
+    const hasUnsavedSelectedPrompt = editorDirty && selectedId !== null && ids.includes(selectedId);
+    const warning = hasUnsavedSelectedPrompt ? "\n当前模板尚未保存的修改也会丢弃。" : "";
+    if (!window.confirm(`确定将选中的 ${ids.length} 个模板移到回收站？可在 30 天内恢复。${warning}`)) return;
+    try {
+      await deletePrompts(ids);
+      if (selectedId && ids.includes(selectedId)) setSelectedId(null);
+      setSelectedPromptIds([]);
+      setSelectionMode(false);
+      pushToast("info", `已将 ${ids.length} 个模板移到回收站，可在 30 天内恢复`);
+    } catch {
+      // The store reports the write failure.
+    }
   };
 
   const cycleTheme = () => {
@@ -211,6 +249,16 @@ function MainApp() {
             selectedId={selectedId}
             onSelect={onSelectPrompt}
             searchQuery={query}
+            sortOrder={sortOrder}
+            onSortOrderChange={setSortOrder}
+            selectionMode={selectionMode}
+            selectedIds={selectedPromptIds}
+            allowSelection={sel.kind !== "trash"}
+            onToggleSelectionMode={() => { setSelectedPromptIds([]); setSelectionMode(true); }}
+            onTogglePromptSelection={togglePromptSelection}
+            onToggleSelectAll={toggleSelectAllVisible}
+            onDeleteSelected={() => void deleteSelectedPrompts()}
+            onCancelSelection={() => { setSelectedPromptIds([]); setSelectionMode(false); }}
           />
         </div>
         <PromptEditor key={selected ? `${selected.id}:${selected.updatedAt}` : "empty"} prompt={selected} isTrashed={sel.kind === "trash"} onUse={setFillTarget} onDirtyChange={setEditorDirty} />

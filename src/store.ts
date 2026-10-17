@@ -121,9 +121,21 @@ export function recordPromptUse(id: string): Promise<void> {
 }
 
 export function deletePrompt(id: string): Promise<void> {
+  return deletePrompts([id]);
+}
+
+export function deletePrompts(ids: string[]): Promise<void> {
+  const selectedIds = new Set(ids);
+  if (selectedIds.size === 0) return Promise.resolve();
+  const deletedAt = new Date().toISOString();
   return setState((s) => {
-    const prompt = s.prompts.find((item) => item.id === id);
-    return prompt ? { ...s, prompts: s.prompts.filter((item) => item.id !== id), trash: [...s.trash, { prompt, deletedAt: new Date().toISOString() }] } : s;
+    const removed = s.prompts.filter((prompt) => selectedIds.has(prompt.id));
+    if (removed.length === 0) return s;
+    return {
+      ...s,
+      prompts: s.prompts.filter((prompt) => !selectedIds.has(prompt.id)),
+      trash: [...s.trash, ...removed.map((prompt) => ({ prompt, deletedAt }))],
+    };
   });
 }
 

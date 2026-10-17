@@ -111,6 +111,15 @@ button { -webkit-tap-highlight-color: transparent; }
 .prompt-pane { width: 286px; flex: 0 0 286px; background: var(--panel-soft) !important; overflow: hidden; }
 .prompt-pane-heading { height: 55px; flex: 0 0 55px; display: flex; align-items: center; justify-content: space-between; padding: 0 17px; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 13px; font-weight: 650; }
 .prompt-pane-count { display: grid; place-items: center; min-width: 23px; height: 22px; padding: 0 6px; border-radius: 7px; background: var(--panel-hover); color: var(--muted); font-size: 11px; font-weight: 600; }
+.prompt-list-toolbar { min-height: 42px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.prompt-sort-label, .prompt-selection-count { flex: 0 0 auto; color: var(--muted); font-size: 11px; }
+.prompt-sort-select { min-width: 0; flex: 1 1 auto; height: 27px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); font-size: 11px; outline: none; }
+.prompt-sort-select:focus { border-color: var(--accent); }
+.prompt-toolbar-button { flex: 0 0 auto; padding: 4px 6px; border-radius: 6px; color: var(--ink); font-size: 11px; white-space: nowrap; }
+.prompt-toolbar-button:hover { background: var(--panel-hover); }
+.prompt-toolbar-button:disabled { cursor: not-allowed; opacity: .45; }
+.prompt-delete-button { color: #d94452; }
+.prompt-select-checkbox { width: 14px; height: 14px; flex: 0 0 auto; align-self: center; accent-color: var(--accent); }
 .prompt-list { padding: 8px !important; }
 .prompt-row { padding: 11px 11px !important; border: 1px solid transparent; border-radius: 9px !important; }
 .prompt-row:hover { background: var(--panel) !important; border-color: var(--line); }
