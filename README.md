@@ -4,7 +4,8 @@
 
 ## 功能
 
-- 创建、编辑、删除模板；按标签、收藏和置顶筛选，支持模糊搜索。
+- 首次启动自动提供八套双语内置专家，可直接使用或创建个人副本。
+- 创建、编辑、删除个人模板；按标签、收藏和置顶筛选，支持模糊搜索。
 - 使用模板时填写变量；内置 `date`、`time`、`datetime` 和 `clipboard`。
 - 导入 JSON 或 Markdown；导入前预览数量及重复项，并自动备份现有模板库。
 - 导出整库 JSON 或单个 Markdown 模板。
@@ -15,9 +16,11 @@
 
 ## 数据与备份
 
-Windows 默认保存在 `D:\PromptPad\prompts.json`；macOS 和 Linux 默认保存在 `~/PromptPad/prompts.json`。可用 `PROMPTPAD_DATA_DIR` 环境变量指定其他目录。如果 Windows 设备没有 D 盘，请先设置该变量。
+桌面端现在使用本地 SQLite `promptpad.db`。Windows 默认目录为 `D:\PromptPad`，macOS 和 Linux 为 `~/PromptPad`；可用 `PROMPTPAD_DATA_DIR` 指定其他目录。Windows 没有 D 盘时请先设置该变量。
 
-每次导入前，会在同一数据目录创建 `prompts.backup-<时间戳>.json`。恢复时先退出应用，再备份当前 `prompts.json`，最后用所需备份文件替换它。
+首次启动会校验并备份旧 `prompts.json`，在事务中迁移个人模板和设置，保留原文件。迁移失败会停止加载并提供重试。每次导入前创建一致性的数据库备份。
+
+内置专家随应用交付，断网可用；个人副本保留来源版本，更新内置专家不会覆盖个人内容。迁移、恢复、内容维护和验收方法见 [本地数据库说明](docs/local-database.md)。
 
 ## 开发与构建
 
@@ -29,6 +32,7 @@ pnpm tauri dev
 ```sh
 pnpm test
 pnpm build
+cargo test --manifest-path src-tauri/storage/Cargo.toml --locked
 pnpm tauri build
 ```
 
@@ -53,7 +57,7 @@ pnpm tauri build
 
 Skill 先读取专家索引，再加载相关模板。普通专业任务通常选择一个专家；需要多个阶段时组合 2–3 个，由同一个 Agent 分阶段使用。简单问答、翻译和常规小改动无需调用专家库。
 
-专家库本身使用 Markdown，不需要 SQLite、额外 API 或在线更新。执行任务时是否需要联网，取决于任务本身和 Agent 的能力；专家模板不会授予额外权限。
+Codex 专家库 Skill 本身使用 Markdown，不需要 SQLite、额外 API 或在线更新。桌面端从同源内容生成内置专家包并存入 SQLite。执行任务时是否需要联网，取决于任务本身和 Agent 的能力；专家模板不会授予额外权限。
 
 ### 安装到 Codex
 

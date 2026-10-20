@@ -1,0 +1,5 @@
+# Stable bytes for embedded expert packages and SQL migration checksums.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary

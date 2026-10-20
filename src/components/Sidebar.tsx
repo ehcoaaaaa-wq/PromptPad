@@ -4,6 +4,8 @@ import { useStore } from "../store";
 
 export type SidebarSelection =
   | { kind: "all" }
+  | { kind: "experts" }
+  | { kind: "personal" }
   | { kind: "favorites" }
   | { kind: "pinned" }
   | { kind: "tag"; tag: string };
@@ -26,6 +28,8 @@ export function Sidebar({
   return (
     <aside className="w-52 shrink-0 p-2 overflow-y-auto text-sm border-r border-zinc-200 dark:border-zinc-800">
       <SectionTitle>视图</SectionTitle>
+      <Item label="内置专家" active={selection.kind === "experts"} onClick={() => onSelect({ kind: "experts" })} count={store.prompts.filter(p => p.origin === "builtin").length} />
+      <Item label="我的模板" active={selection.kind === "personal"} onClick={() => onSelect({ kind: "personal" })} count={store.prompts.filter(p => p.origin !== "builtin").length} />
       <Item
         icon={<Hash className="w-3.5 h-3.5" />}
         label="全部"

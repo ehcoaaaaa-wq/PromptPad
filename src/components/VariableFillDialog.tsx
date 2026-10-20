@@ -38,6 +38,8 @@ export function VariableFillDialog({
   }, [prompt.id]);
 
   const onCopy = async () => {
+    const missing = variables.filter(v => v.required && !BUILTIN_VARS.has(v.name) && !(values[v.name] ?? "").trim());
+    if (missing.length) { pushToast("error", "请填写必填变量：" + missing.map(v => v.name).join("、")); return; }
     const result = renderTemplate(prompt.content, values, clipboard);
     try {
       await writeText(result);

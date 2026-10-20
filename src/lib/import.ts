@@ -1,4 +1,5 @@
-import type { Prompt } from "../types";
+import type { Prompt, PromptMetadata } from "../types";
+import { metadataKeys } from "./prompt-model.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -20,7 +21,8 @@ function normalizePrompt(value: unknown, index: number): Prompt {
   if (value.variables !== undefined && (!Array.isArray(value.variables) || !value.variables.every(
     (variable) => isObject(variable) && typeof variable.name === "string" &&
       (variable.description === undefined || typeof variable.description === "string") &&
-      (variable.defaultValue === undefined || typeof variable.defaultValue === "string"),
+      (variable.defaultValue === undefined || typeof variable.defaultValue === "string") &&
+      (variable.required === undefined || typeof variable.required === "boolean"),
   ))) {
     throw new Error(`第 ${index + 1} 个模板的变量格式不正确`);
   }
@@ -32,8 +34,18 @@ function normalizePrompt(value: unknown, index: number): Prompt {
     (value.updatedAt !== undefined && typeof value.updatedAt !== "string")) {
     throw new Error(`第 ${index + 1} 个模板的时间格式不正确`);
   }
+  if (value.origin !== undefined && !["builtin", "user"].includes(String(value.origin))) throw new Error("模板来源无效");
+  const metadata: PromptMetadata = {};
+  for (const key of metadataKeys) {
+    if (value[key] !== undefined) {
+      if (typeof value[key] !== "string") throw new Error(`模板元数据 ${key} 格式不正确`);
+      metadata[key] = value[key];
+    }
+  }
   const now = new Date().toISOString();
   return {
+    ...metadata,
+    origin: value.origin === "builtin" ? "builtin" : "user",
     id: typeof value.id === "string" && value.id ? value.id : crypto.randomUUID(),
     title: value.title,
     content: value.content,
@@ -66,14 +78,18 @@ export function parseIncoming(path: string, text: string): Prompt[] {
     const parsed: unknown = JSON.parse(text);
     if (Array.isArray(parsed)) raw = parsed;
     else if (isObject(parsed) && Array.isArray(parsed.prompts) &&
-      (parsed.schemaVersion === undefined || parsed.schemaVersion === 1)) raw = parsed.prompts;
+      (parsed.schemaVersion === undefined || parsed.schemaVersion === 1 || parsed.schemaVersion === 2)) raw = parsed.prompts;
     else throw new Error("JSON 模板库格式不正确或版本不支持");
   } else {
     const normalized = text.replace(/\r\n/g, "\n");
     const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
     if (!match) throw new Error("Markdown 缺少 frontmatter");
     const fm = match[1];
+    const schemaVersion = parseField(frontmatterValue(fm, "schemaVersion"), 1);
+    if (schemaVersion !== 1 && schemaVersion !== 2) throw new Error("Markdown 版本不支持");
     raw = [{
+      ...Object.fromEntries(metadataKeys.map(key => [key, parseField(frontmatterValue(fm, key), undefined)])),
+      origin: parseField(frontmatterValue(fm, "origin"), "user"),
       id: parseField(frontmatterValue(fm, "id"), crypto.randomUUID()),
       title: parseField(frontmatterValue(fm, "title"), "未命名"),
       content: match[2],
@@ -85,7 +101,16 @@ export function parseIncoming(path: string, text: string): Prompt[] {
       updatedAt: parseField(frontmatterValue(fm, "updatedAt"), undefined),
     }];
   }
-  return normalizePrompts(raw);
+  // Exchange files never grant the trusted builtin identity. Import as a stable personal copy.
+  return normalizePrompts(raw).map(prompt => {
+    if (prompt.origin === "builtin" || prompt.id.startsWith("builtin:")) {
+      return { ...prompt, id: `imported:${prompt.id}`, origin: "user" as const,
+        packageId: undefined, derivedFromId: prompt.id,
+        baseVersion: prompt.contentVersion ?? prompt.baseVersion,
+        contentVersion: undefined, contentHash: undefined };
+    }
+    return { ...prompt, origin: "user" as const, packageId: undefined };
+  });
 }
 
 export function normalizePrompts(raw: unknown, requireIds = false): Prompt[] {

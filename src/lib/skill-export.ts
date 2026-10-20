@@ -58,6 +58,13 @@ export function buildSkillMarkdown(prompt: Prompt, name: string, description: st
       "Replace every placeholder with task context or an answer from the user. Ask only for missing information needed to proceed. Do not leave unresolved placeholders in the final result.",
     ] : []),
     "",
+    ...(prompt.expertKey ? [
+      "## Source",
+      "",
+      `Expert: ${prompt.expertKey}; language: ${prompt.locale ?? "unspecified"}; source version: ${prompt.contentVersion ?? prompt.baseVersion ?? "unspecified"}.`,
+      "This export is a snapshot. Updating PromptPad does not update this Skill folder.",
+      "",
+    ] : []),
     "## Template",
     "",
     prompt.content.trimEnd(),

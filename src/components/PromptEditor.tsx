@@ -12,11 +12,14 @@ export function PromptEditor({
   prompt,
   onUse,
   onDirtyChange,
+  onCopy,
 }: {
   prompt: Prompt | null;
   onUse: (p: Prompt) => void;
   onDirtyChange: (dirty: boolean) => void;
+  onCopy: (p: Prompt) => Promise<void>;
 }) {
+  const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Prompt | null>(null);
 
   // Re-seed draft when the user switches to a different prompt.
@@ -39,6 +42,7 @@ export function PromptEditor({
     );
   }
 
+  const builtin = draft.origin === "builtin";
   const contentVars = extractVariableNames(draft.content);
   const variables = reconcileVariables(draft.variables, contentVars);
 
@@ -50,12 +54,13 @@ export function PromptEditor({
       pushToast("error", "标题不能为空");
       return;
     }
+    setBusy(true);
     try {
-      await updatePrompt(draft.id, { ...draft, variables });
+      await updatePrompt(draft.id, builtin ? { favorite: draft.favorite, pinned: draft.pinned } : { ...draft, variables });
       pushToast("success", "已保存");
     } catch {
       // The store reports the write failure and keeps the in-memory draft.
-    }
+    } finally { setBusy(false); }
   };
 
   const remove = async () => {
@@ -76,7 +81,7 @@ export function PromptEditor({
     const ready = { ...draft, variables };
     if (dirty) {
       try {
-        await updatePrompt(draft.id, ready);
+        await updatePrompt(draft.id, builtin ? { favorite: draft.favorite, pinned: draft.pinned } : ready);
       } catch {
         return;
       }
@@ -89,7 +94,10 @@ export function PromptEditor({
 
   return (
     <div className="flex-1 flex flex-col p-5 gap-3 overflow-hidden">
+      {builtin && <div className="text-xs text-blue-600 dark:text-blue-400">内置专家 · {draft.locale} · v{draft.contentVersion}。可直接使用，编辑请创建个人副本。</div>}
+      {draft.derivedFromId && <div className="text-xs text-zinc-500">个人副本 · 来源 {draft.expertKey ?? draft.derivedFromId} · 基于 v{draft.baseVersion ?? "未知"}</div>}
       <input
+        readOnly={builtin || busy}
         value={draft.title}
         onChange={(e) => sync({ title: e.target.value })}
         placeholder="模板标题"
@@ -98,7 +106,7 @@ export function PromptEditor({
       <div className="flex gap-1.5 items-center flex-wrap min-h-6">
         {variables.length === 0 && (
           <span className="text-xs text-zinc-400 dark:text-zinc-500">
-            在正文中使用 {`{{var_name}}`} 添加变量
+            {builtin ? "按模板中的步骤使用，可结合你的任务补充信息" : <>在正文中使用 {`{{var_name}}`} 添加变量</>}
           </span>
         )}
         {variables.map((v) => (
@@ -112,6 +120,7 @@ export function PromptEditor({
         ))}
       </div>
       <textarea
+        readOnly={builtin || busy}
         value={draft.content}
         onChange={(e) => sync({ content: e.target.value })}
         placeholder={"模板正文，使用 {{var}} 占位符\n例如：请把以下代码重构：\n{{code}}"}
@@ -126,6 +135,7 @@ export function PromptEditor({
         {dirty && <span className="text-amber-600 dark:text-amber-400">未保存</span>}
       </div>
       <input
+        readOnly={builtin || busy}
         value={draft.tags.join(", ")}
         onChange={(e) =>
           sync({
@@ -150,7 +160,9 @@ export function PromptEditor({
           label="置顶"
         />
         <div className="flex-1" />
+        {builtin && <button disabled={busy} onClick={() => { setBusy(true); void onCopy(draft).finally(() => setBusy(false)); }} className="px-3 py-1.5 rounded-md bg-blue-500/10">创建个人副本</button>}
         <button
+          disabled={builtin || busy}
           onClick={() => void remove()}
           className="px-3 py-1.5 rounded-md text-rose-500 hover:bg-rose-500/10 transition-colors flex items-center gap-1.5"
         >
@@ -158,12 +170,14 @@ export function PromptEditor({
           删除
         </button>
         <button
+          disabled={busy || !dirty}
           onClick={() => void save()}
           className="px-3 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
         >
           保存
         </button>
         <button
+          disabled={busy}
           onClick={() => void usePrompt()}
           className="px-3 py-1.5 rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-1.5 shadow-sm"
         >

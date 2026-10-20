@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
-import { backupStore, openDialog, saveDialog } from "../lib/commands";
-import { flushWrites, getState, useStore, replaceAll } from "../store";
+import { openDialog, saveDialog } from "../lib/commands";
+import { flushWrites, useStore, applyImport as persistImport } from "../store";
+import { markdownExport } from "../lib/prompt-model";
 import type { Prompt } from "../types";
-import { mergeIncoming, parseIncoming, type ConflictAction } from "../lib/import";
+import { parseIncoming, type ConflictAction } from "../lib/import";
 import { pushToast } from "../hooks/useToast";
 import { SkillExportDialog } from "./SkillExportDialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
@@ -59,20 +60,7 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
         filters: [{ name: "Markdown", extensions: ["md"] }],
       });
       if (!path) return;
-      const frontmatter = [
-        "---",
-        `id: ${JSON.stringify(p.id)}`,
-        `title: ${JSON.stringify(p.title)}`,
-        `tags: [${p.tags.map((t) => JSON.stringify(t)).join(", ")}]`,
-        `variables: ${JSON.stringify(p.variables)}`,
-        `favorite: ${p.favorite}`,
-        `pinned: ${p.pinned}`,
-        `createdAt: ${JSON.stringify(p.createdAt)}`,
-        `updatedAt: ${JSON.stringify(p.updatedAt)}`,
-        "---",
-        "",
-      ].join("\n");
-      await writeTextFile(path, frontmatter + p.content);
+      await writeTextFile(path, markdownExport(p));
       pushToast("success", "已导出为 Markdown");
     } catch (e) {
       pushToast("error", "导出失败：" + String(e));
@@ -118,12 +106,9 @@ export function ImportExportMenu({ selectedPrompt, hasUnsavedChanges }: { select
     if (!pending || applying) return;
     setApplying(true);
     try {
-      const current = getState();
-      const next = mergeIncoming(current.prompts, pending, action);
       await flushWrites();
-      await backupStore();
-      await replaceAll({ ...current, prompts: next });
-      pushToast("success", `导入完成：当前共 ${next.length} 个模板`);
+      await persistImport(pending, action);
+      pushToast("success", "导入完成，已自动备份数据库");
       setPending(null);
     } catch (e) {
       pushToast("error", "导入失败：" + String(e));

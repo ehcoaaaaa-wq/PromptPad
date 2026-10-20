@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "id": "promptpad-experts",
+  "version": "1.0.0",
+  "sourceCommit": "42ffbc07251268f038246771f790f31fa97849fc",
+  "releasedAt": "2026-10-20T00:00:00Z",
+  "experts": [
+    {
+      "key": "product-requirements",
+      "title": {
+        "zh-CN": "产品需求",
+        "en": "Product requirements"
+      },
+      "domain": "product",
+      "version": "1.0.0",
+      "path": "skills/promptpad-experts/references/product-requirements.md"
+    },
+    {
+      "key": "software-architecture",
+      "title": {
+        "zh-CN": "软件架构",
+        "en": "Software architecture"
+      },
+      "domain": "software",
+      "version": "1.0.0",
+      "path": "skills/promptpad-experts/references/software-architecture.md"
+    },
+    {
+      "key": "debugging",
+      "title": {
+        "zh-CN": "故障排查",
+        "en": "Debugging"
+      },
+      "domain": "software",
+      "version": "1.0.0",
+      "path": "skills/promptpad-experts/references/debugging.md"
+    },
+    {
+      "key": "react-performance",
+      "title": {
+        "zh-CN": "React 性能",
+        "en": "React performance"
+      },
+      "domain": "software",
+      "version": "1.0.0",
+      "path": "skills/promptpad-experts/references/react-performance.md"
+    },
+    {
+      "key": "ui-ux-design",
+      "title": {
+        "zh-CN": "界面体验",
+        "en": "UI/UX design"
+      },
+      "domain": "design",
+      "version": "1.0.0",
+      "path": "skills/promptpad-experts/references/ui-ux-design.md"
+    },
+    {
+      "key": "research-synthesis",
+      "title": {
+        "zh-CN": "研究整理",
+        "en": "Research synthesis"
+      },
+      "domain": "research",
+      "version": "1.0.0",
+      "path": "skills/promptpad-experts/references/research-synthesis.md"
+    },
+    {
+      "key": "data-analysis",
+      "title": {
+        "zh-CN": "数据分析",
+        "en": "Data analysis"
+      },
+      "domain": "data",
+      "version": "1.0.0",
+      "path": "skills/promptpad-experts/references/data-analysis.md"
+    },
+    {
+      "key": "technical-writing",
+      "title": {
+        "zh-CN": "技术写作",
+        "en": "Technical writing"
+      },
+      "domain": "writing",
+      "version": "1.0.0",
+      "path": "skills/promptpad-experts/references/technical-writing.md"
+    }
+  ]
+}

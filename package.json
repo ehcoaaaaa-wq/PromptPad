@@ -4,11 +4,13 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "pnpm experts:build && vite",
+    "build": "pnpm experts:check && tsc && vite build",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "experts:build": "node scripts/build-experts.mjs",
+    "experts:check": "node scripts/build-experts.mjs --check"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

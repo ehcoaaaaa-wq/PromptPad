@@ -1,0 +1,26 @@
+name: Desktop and storage checks
+on:
+  pull_request:
+  push:
+    branches: [main, feat/local-expert-database]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+      - run: cargo test --manifest-path src-tauri/storage/Cargo.toml --locked
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: pnpm tauri build --no-bundle
