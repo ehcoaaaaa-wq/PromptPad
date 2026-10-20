@@ -30,3 +30,7 @@
 ## 版本范围
 
 首版使用 Markdown 文件，不依赖 SQLite、额外模型 API 或联网更新。桌面端只负责导出独立 Skill；专家库的编辑与 GitHub 自动更新留待后续版本。
+
+## 桌面端内置专家
+
+桌面端首次启动自动装载八套双语专家到本地数据库。选择“内置专家”即可使用，修改正文需创建个人副本。该数据库不会被 Codex Skill 读取；Skill 仍使用 references 中的 Markdown。详情见 [本地数据库说明](local-database.md)。

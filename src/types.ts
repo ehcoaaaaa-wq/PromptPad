@@ -1,13 +1,30 @@
-// Data model — mirrors the Rust `Store` JSON shape.
-// Keep in sync with src-tauri/src/lib.rs default_store_json().
+// Exchange schema v2; mirrored by src-tauri/storage/src/models.rs.
+// Optional metadata keeps legacy JSON/Markdown imports compatible.
 
 export type Variable = {
   name: string;
   description?: string;
   defaultValue?: string;
+  required?: boolean;
 };
 
-export type Prompt = {
+export type PromptMetadata = {
+  expertKey?: string;
+  locale?: string;
+  domain?: string;
+  description?: string;
+  useWhen?: string;
+  packageId?: string;
+  contentVersion?: string;
+  contentHash?: string;
+  sourcePath?: string;
+  sourceCommit?: string;
+  derivedFromId?: string;
+  baseVersion?: string;
+};
+
+export type Prompt = PromptMetadata & {
+  origin?: "builtin" | "user";
   id: string;
   title: string;
   content: string;
@@ -25,13 +42,13 @@ export type Settings = {
 };
 
 export type Store = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   prompts: Prompt[];
   settings: Settings;
 };
 
 export const DEFAULT_STORE: Store = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   prompts: [],
   settings: { autoLaunch: false, theme: "system" },
 };

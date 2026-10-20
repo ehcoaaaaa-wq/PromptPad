@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PromptPad offline expert package v1",
+  "type": "object",
+  "required": ["schemaVersion", "id", "version", "prompts"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "id": {"const": "promptpad-experts"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "prompts": {
+      "type": "array", "minItems": 1, "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "required": ["id", "origin", "expertKey", "locale", "packageId", "title", "content", "tags", "variables", "favorite", "pinned", "createdAt", "updatedAt", "contentVersion", "contentHash", "sourcePath", "sourceCommit"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^builtin:[a-z0-9-]+:(zh-CN|en)$"},
+          "origin": {"const": "builtin"},
+          "expertKey": {"type": "string", "minLength": 1},
+          "locale": {"enum": ["zh-CN", "en"]},
+          "packageId": {"const": "promptpad-experts"},
+          "title": {"type": "string", "minLength": 1},
+          "content": {"type": "string", "minLength": 1},
+          "tags": {"type": "array", "items": {"type": "string"}},
+          "variables": {"type": "array", "items": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "minLength": 1}, "description": {"type": "string"}, "defaultValue": {"type": "string"}, "required": {"type": "boolean"}}}},
+          "favorite": {"type": "boolean"},
+          "pinned": {"type": "boolean"},
+          "createdAt": {"type": "string", "format": "date-time"},
+          "updatedAt": {"type": "string", "format": "date-time"},
+          "contentVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+          "contentHash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "sourcePath": {"type": "string"},
+          "sourceCommit": {"type": "string", "pattern": "^[a-f0-9]{40}$"}
+        }
+      }
+    }
+  }
+}

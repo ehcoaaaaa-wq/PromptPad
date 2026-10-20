@@ -2,8 +2,8 @@
 //
 // Responsibilities:
 //   - Register Tauri plugins (clipboard, dialog, fs, autostart, opener).
-//   - Provide storage commands: get_data_dir, read_store, write_store.
-//   - Atomic file writes (write to .tmp then rename) to avoid corruption.
+//   - Serialize SQLite operations on a blocking worker.
+//   - Embed the validated offline expert package through promptpad-storage.
 //
 // Data directory policy:
 //   - Windows default: D:\PromptPad\  (user feedback: avoid C: drive).
@@ -20,102 +20,105 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 
-const STORE_FILE: &str = "prompts.json";
+use promptpad_storage::{Database, Prompt, Settings, Store};
+use std::sync::{Arc, Mutex};
 
-// Tauri commands are async to avoid blocking the UI thread on disk I/O.
+#[derive(Clone, Default)]
+struct DatabaseState(Arc<Mutex<Option<Database>>>);
+
+async fn with_database<T: Send + 'static>(
+    state: DatabaseState,
+    work: impl FnOnce(&mut Database) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = state.0.lock().map_err(|_| "数据库锁不可用")?;
+        let db = guard.as_mut().ok_or("模板库未成功加载，已禁止写入")?;
+        work(db)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 
 #[tauri::command]
 async fn get_data_dir() -> Result<String, String> {
-    let dir = data_dir();
-    fs::create_dir_all(&dir).map_err(|e| format!("create data dir: {e}"))?;
-    Ok(dir.to_string_lossy().to_string())
+    Ok(data_dir().to_string_lossy().into_owned())
 }
 
 #[tauri::command]
-async fn read_store() -> Result<String, String> {
-    let path = store_path();
-    if !path.exists() {
-        // Return empty store on first run rather than erroring.
-        return Ok(default_store_json());
-    }
-    fs::read_to_string(&path).map_err(|e| format!("read store: {e}"))
-}
-
-#[tauri::command]
-async fn write_store(content: String) -> Result<(), String> {
-    let parsed: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("invalid store JSON: {e}"))?;
-    if !valid_store(&parsed) {
-        return Err("invalid store structure".into());
-    }
-
-    let path = store_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create parent: {e}"))?;
-    }
-    // Preserve an unreadable store before replacing it with valid data.
-    if path.exists() {
-        let existing =
-            fs::read_to_string(&path).map_err(|e| format!("read existing store: {e}"))?;
-        if !serde_json::from_str::<serde_json::Value>(&existing)
-            .is_ok_and(|value| valid_store(&value))
-        {
-            let stamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| format!("system clock: {e}"))?
-                .as_secs();
-            let backup = path.with_file_name(format!("prompts.corrupt-{stamp}.json"));
-            fs::copy(&path, &backup).map_err(|e| format!("back up damaged store: {e}"))?;
+async fn read_store(state: tauri::State<'_, DatabaseState>) -> Result<Store, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = state.0.lock().map_err(|_| "数据库锁不可用")?;
+        if guard.is_none() {
+            *guard = Some(Database::open(&data_dir())?);
         }
-    }
-    // Write to .tmp, then replace the existing file.
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, &content).map_err(|e| format!("write tmp: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))?;
-    Ok(())
-}
-
-fn valid_store(value: &serde_json::Value) -> bool {
-    let Some(prompts) = value.get("prompts").and_then(|v| v.as_array()) else {
-        return false;
-    };
-    value.get("schemaVersion").and_then(|v| v.as_u64()) == Some(1)
-        && value.get("settings").is_some_and(|v| v.is_object())
-        && prompts.iter().all(|prompt| {
-            prompt
-                .get("id")
-                .and_then(|v| v.as_str())
-                .is_some_and(|v| !v.is_empty())
-                && prompt.get("title").is_some_and(|v| v.is_string())
-                && prompt.get("content").is_some_and(|v| v.is_string())
-                && prompt
-                    .get("tags")
-                    .and_then(|v| v.as_array())
-                    .is_some_and(|tags| tags.iter().all(|v| v.is_string()))
-                && prompt
-                    .get("variables")
-                    .and_then(|v| v.as_array())
-                    .is_some_and(|variables| {
-                        variables
-                            .iter()
-                            .all(|v| v.get("name").is_some_and(|name| name.is_string()))
-                    })
-        })
+        guard.as_ref().ok_or("数据库未加载")?.read()
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn backup_store() -> Result<Option<String>, String> {
-    let path = store_path();
-    if !path.exists() {
-        return Ok(None);
-    }
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| format!("system clock: {e}"))?
-        .as_millis();
-    let backup = path.with_file_name(format!("prompts.backup-{stamp}.json"));
-    fs::copy(&path, &backup).map_err(|e| format!("back up store: {e}"))?;
-    Ok(Some(backup.to_string_lossy().to_string()))
+async fn save_prompt(
+    state: tauri::State<'_, DatabaseState>,
+    prompt: Prompt,
+) -> Result<Store, String> {
+    with_database(state.inner().clone(), move |db| {
+        db.save(&prompt)?;
+        db.read()
+    })
+    .await
+}
+#[tauri::command]
+async fn delete_prompt(
+    state: tauri::State<'_, DatabaseState>,
+    id: String,
+) -> Result<Store, String> {
+    with_database(state.inner().clone(), move |db| {
+        db.delete(&id)?;
+        db.read()
+    })
+    .await
+}
+#[tauri::command]
+async fn set_prompt_flags(
+    state: tauri::State<'_, DatabaseState>,
+    id: String,
+    favorite: bool,
+    pinned: bool,
+) -> Result<Store, String> {
+    with_database(state.inner().clone(), move |db| {
+        db.set_flags(&id, favorite, pinned)?;
+        db.read()
+    })
+    .await
+}
+#[tauri::command]
+async fn save_settings(
+    state: tauri::State<'_, DatabaseState>,
+    settings: Settings,
+) -> Result<Store, String> {
+    with_database(state.inner().clone(), move |db| {
+        db.settings(&settings)?;
+        db.read()
+    })
+    .await
+}
+#[tauri::command]
+async fn import_prompts(
+    state: tauri::State<'_, DatabaseState>,
+    prompts: Vec<Prompt>,
+    action: String,
+) -> Result<Store, String> {
+    with_database(state.inner().clone(), move |db| {
+        db.import(&prompts, &action)?;
+        db.read()
+    })
+    .await
+}
+#[tauri::command]
+async fn backup_store(state: tauri::State<'_, DatabaseState>) -> Result<String, String> {
+    with_database(state.inner().clone(), |db| db.backup()).await
 }
 
 #[tauri::command]
@@ -219,15 +222,6 @@ fn data_dir() -> PathBuf {
     }
 }
 
-fn store_path() -> PathBuf {
-    data_dir().join(STORE_FILE)
-}
-
-fn default_store_json() -> String {
-    // Versioned empty store — keep the same shape as the TS Store type.
-    r#"{"schemaVersion":1,"prompts":[],"settings":{"autoLaunch":false}}"#.to_string()
-}
-
 fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
     if let WindowEvent::CloseRequested { api, .. } = event {
         let _ = window.hide();
@@ -238,6 +232,7 @@ fn handle_window_event(window: &tauri::Window, event: &WindowEvent) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(DatabaseState::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
@@ -256,7 +251,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_data_dir,
             read_store,
-            write_store,
+            save_prompt,
+            delete_prompt,
+            set_prompt_flags,
+            save_settings,
+            import_prompts,
             backup_store,
             export_skill,
             quit_app

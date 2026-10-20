@@ -6,7 +6,7 @@ import { pushToast } from "../hooks/useToast";
 
 export function SkillExportDialog({ prompt, onClose }: { prompt: Prompt; onClose: () => void }) {
   const [name, setName] = useState(() => suggestedSkillName(prompt));
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(prompt.description ?? "");
   const [exporting, setExporting] = useState(false);
   const validation = validateSkillDetails(name, description);
   let preview = "";

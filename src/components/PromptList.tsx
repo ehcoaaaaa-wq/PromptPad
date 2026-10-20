@@ -15,7 +15,7 @@ export function PromptList({
   if (prompts.length === 0) {
     return (
       <div className="p-4 text-zinc-400 dark:text-zinc-500 text-sm">
-        {searchQuery ? "没有匹配的模板" : "还没有模板，点 + 新建一个"}
+        {searchQuery ? "没有匹配的模板" : "此视图暂无模板，可选择内置专家或点 + 新建"}
       </div>
     );
   }
@@ -51,6 +51,7 @@ export function PromptList({
                 {p.title || "(未命名)"}
               </span>
             </div>
+            <div className="text-[10px] text-zinc-500 mt-1">{p.origin === "builtin" ? `内置专家 · ${p.locale} · v${p.contentVersion}` : p.derivedFromId ? "个人副本" : "个人模板"}</div>
             {p.tags.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1">
                 {p.tags.slice(0, 3).map((t) => (
