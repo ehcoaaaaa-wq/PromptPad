@@ -45,7 +45,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const output = JSON.stringify(buildExperts(manifest), null, 2) + '\n';
   const target = resolve(root, 'src-tauri/resources/experts.json');
   if (process.argv.includes('--check')) {
-    if (readFileSync(target, 'utf8') !== output) throw new Error('Expert package is stale; run pnpm experts:build');
+    if (readFileSync(target, 'utf8').replace(/\r\n/g, '\n') !== output) throw new Error('Expert package is stale; run pnpm experts:build');
   } else writeFileSync(target, output);
   console.log(`Validated ${manifest.experts.length} experts / ${JSON.parse(output).prompts.length} language records`);
 }
